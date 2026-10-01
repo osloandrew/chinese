@@ -7,9 +7,9 @@
    * These values are public client identifiers, not secrets, so it's fine to commit them.
    */
   const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyC1hLSdPLx7z4_KFu1usIFsW1A8sZoYH34",
-    authDomain: "japanese-dictionary-ea7d1.firebaseapp.com",
-    projectId: "japanese-dictionary-ea7d1",
+    apiKey: "AIzaSyCS-Gi_VSW353yl6cNq6L_1f_YUkTbXN10",
+    authDomain: "chinese-dictionary-b5ef6.firebaseapp.com",
+    projectId: "chinese-dictionary-b5ef6",
   };
 
   // Google's OAuth 2.0 web client ID for this Firebase project (Firebase
@@ -27,7 +27,7 @@
   // delivers the result to a JS callback on this page, without depending on
   // storage written on a third-party origin surviving the round trip.
   const GOOGLE_OAUTH_CLIENT_ID =
-    "95208101605-94ubg5ncrkr101nn1r2dvtco05800s55.apps.googleusercontent.com";
+    "1076885487799-fdqs91jf0dtr0h3ee66mr0uetlj5kgoi.apps.googleusercontent.com";
 
   // The Firebase SDK (~3 blocking scripts) is only needed by the minority of
   // visitors who actually sign in. Loading it eagerly on every pageview was

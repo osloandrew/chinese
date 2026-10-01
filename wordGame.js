@@ -24,44 +24,30 @@ const CEFR_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C"];
 const BANNED_WORD_CLASSES = ["pronoun", "determiner"];
 
 // A small reviewed bridge over an intentional limitation of the automatic
-// frequency build: forms claimed by multiple dictionary rows receive no
-// corpus credit at all. That safety rule correctly avoids assigning a form's
-// full count to the wrong sense, but it also drops indispensable beginner
-// forms such as jeg/han/men/nå. These are selection priorities, not a second
-// dictionary or a visible curriculum level.
+// frequency build: only exact whole-word matches against the COCT list earn
+// corpus credit, and a few indispensable beginner words (function words,
+// pronouns, particles, greetings) either sit in senses a single frequency
+// cannot represent or are better guaranteed to surface early regardless of
+// their rank. These are selection priorities, not a second dictionary or a
+// visible curriculum level.
 const A0_ESSENTIAL_WORDS = new Set([
-  "jeg", "du", "han", "hun", "den", "det", "vi", "dere", "de",
-  "meg", "deg", "ham", "henne", "oss", "dem", "seg",
-  "min", "din", "sin", "hans", "hennes", "vår", "deres",
-  "denne", "dette", "en", "ei", "et",
-  "ikke", "nå", "her", "der", "hva", "hvem", "hvor", "hvordan", "hvorfor",
-  "og", "men", "eller", "fordi", "at", "som", "å",
-  "i", "på", "til", "av", "med", "fra", "for", "om", "ved",
-  "være", "ha", "bli", "kunne", "skulle", "ville", "måtte",
-  "komme", "gå", "gjøre", "si", "se", "få", "gi",
-  "hei", "hallo", "ja", "nei", "takk",
+  "我", "你", "他", "她", "它", "我們", "你們", "他們",
+  "這", "那", "誰", "什麼", "哪裡", "怎麼", "為什麼",
+  "的", "了", "嗎", "不", "沒有", "也", "都", "很",
+  "是", "有", "在", "和", "會", "能", "要", "想", "來", "去",
+  "你好", "謝謝", "對不起", "再見", "好",
 ].map((word) => word.normalize("NFC").toLocaleLowerCase("zh-TW")));
 const A0_FUNCTION_WORD_CLASSES = new Set([
   "pronoun",
   "determiner",
   "preposition",
   "conjunction",
+  "particle",
 ]);
-const A0_ESSENTIAL_CLASS_OVERRIDES = Object.freeze({
-  dette: new Set(["determiner"]),
-  en: new Set(["determiner"]),
-  for: new Set(["conjunction", "preposition"]),
-  ham: new Set(["pronoun"]),
-  han: new Set(["pronoun"]),
-  jeg: new Set(["pronoun"]),
-  men: new Set(["conjunction"]),
-  nei: new Set(["interjection"]),
-  nå: new Set(["adverb"]),
-  om: new Set(["preposition"]),
-  ved: new Set(["preposition"]),
-  vår: new Set(["determiner"]),
-  å: new Set(["conjunction"]),
-});
+// Per-word word-class restrictions, for essentials whose headword is also
+// used as a different part of speech elsewhere in the dictionary. Empty for
+// now: every essential above is tagged A1 only once.
+const A0_ESSENTIAL_CLASS_OVERRIDES = Object.freeze({});
 
 const ABILITY_STORAGE_KEY = "chinese-dictionary-ability-v1";
 const LEGACY_GAME_LEVEL_STORAGE_KEY = "chinese-dictionary-game-level-v1";
@@ -136,7 +122,7 @@ const PLACEMENT_CALIBRATION_MIN_STEP = 30;
 // difficulty and skill rather than being a fixed ten-item quiz.
 //
 // Keep three forward questions at the beginning: a learner who genuinely has
-// no Japanese should not meet dictation before they have seen the game
+// no Chinese should not meet dictation before they have seen the game
 // once. The later forward checkpoints help separate a broad vocabulary gap
 // from a weaker listening or production skill without making one difficult
 // modality dominate the general ability estimate.
@@ -544,7 +530,7 @@ function getDailyQuestQuestionMode(
 // feel like a genuine step up rather than an unlabeled generic session. Its
 // exercise sequence is deterministic so every bonus round contains the same
 // intentional balance: three context questions, three listening questions,
-// and four typed English-to-Japanese recall questions. Vocabulary difficulty
+// and four typed English-to-Chinese recall questions. Vocabulary difficulty
 // still comes from the learner's saved CEFR level and the adaptive scheduler.
 function getBonusRoundQuestionMode(questionsAnswered = 0, hasAudio = false) {
   const index = Math.max(0, Math.floor(Number(questionsAnswered) || 0));
@@ -629,15 +615,15 @@ function interpolateByAbility(score, table) {
 
   return points[points.length - 1].y;
 }
-// Reverse flashcards (English shown, Japanese recalled from memory) test
+// Reverse flashcards (English shown, Chinese recalled from memory) test
 // productive vocabulary knowledge — meaningfully harder than the forward
-// flashcard's receptive recognition (Japanese shown, English recognized
+// flashcard's receptive recognition (Chinese shown, English recognized
 // from a handful of options). Ramping this share up with CEFR level
 // mirrors how language curricula shift emphasis from receptive to
 // productive skill as proficiency grows, rather than handing beginners
 // the hardest recall direction before they've built a receptive base.
 // This only governs the non-cloze half of questions — cloze's own 50%
-// share (a different, sentence-scaffolded kind of Japanese recall) is
+// share (a different, sentence-scaffolded kind of Chinese recall) is
 // unaffected.
 const REVERSE_FLASHCARD_PROBABILITY = {
   A1: 0.1,
@@ -662,7 +648,7 @@ const LISTENING_PROBABILITY = {
 };
 // Productive recall is introduced as a ladder, not as a sudden replacement
 // for recognition practice. Sentence-scaffolded typing begins first; fully
-// unaided English-to-Japanese recall follows only once a word is stronger.
+// unaided English-to-Chinese recall follows only once a word is stronger.
 // A missed typed answer is first reintroduced by the relearning queue as a
 // multiple-choice scaffold, then must be typed correctly before that word can
 // leave the queue or the round can finish. listening's typed variant (true
@@ -1936,7 +1922,7 @@ function isExcludedFromRandomSelection(word) {
   return noRandom.includes(normalized) || noRandomLetters.includes(normalized);
 }
 
-// Folds the three Japanese letters a learner is most likely to type without
+// Folds the three Chinese letters a learner is most likely to type without
 // their special character — æ/ø/å typed as ae/o/a on a keyboard that lacks
 // them — plus any other combining diacritic (accented loanwords), so those
 // near-misses fold to the same comparison key as the correctly-spelled
@@ -2030,8 +2016,8 @@ function startsWithUppercaseLetter(value) {
   );
 }
 
-// Handles both the English gloss's ASCII "," and the Japanese headword's
-// full-width "、" -- entries in japaneseWords.csv only ever use one or the
+// Handles both the English gloss's ASCII "," and the Chinese headword's
+// full-width "、" -- entries in chineseWords.csv only ever use one or the
 // other, never both, so splitting on either is safe for both fields.
 function getDisplayedAnswer(value) {
   return normalizeGameWhitespace(String(value ?? "").split(/[,、]/)[0]);
@@ -3266,7 +3252,7 @@ function getTypedAcceptedAnswers(
     return [...acceptedAnswers];
   }
 
-  // The English prompt can legitimately have more than one Japanese answer
+  // The English prompt can legitimately have more than one Chinese answer
   // (bad/baderom for "bathroom"). Accept only synonyms the user's dictionary
   // itself presents with that same displayed sense and compatible grammatical
   // category. Gender compatibility is especially important for nouns: an
@@ -5096,7 +5082,7 @@ async function startWordGame() {
         isReintroduced: true,
       });
     } else if (firstWordInQueue.wasReverse) {
-      // Rebuild incorrect Japanese-word options for the reintroduced
+      // Rebuild incorrect Chinese-word options for the reintroduced
       // reverse flashcard — same widening behavior as the translation
       // fallback above (same gender/CEFR, then same gender, then any
       // word) if the narrow pool is too small.
@@ -5237,7 +5223,7 @@ async function startWordGame() {
   // longer confined to a single CEFR band, those two are no longer the same
   // thing. Shared prep for whichever mode ends up rendering an
   // English-options question (forward, listening, or cloze's own
-  // fallback-to-forward) — reverse/typed-reverse build Japanese-word
+  // fallback-to-forward) — reverse/typed-reverse build Chinese-word
   // options instead (see GAME_MODES.reverse.renderQuestion) and never touch
   // this.
   const incorrectTranslations = fetchIncorrectTranslations(
@@ -5275,7 +5261,7 @@ async function startWordGame() {
   // which branch rendered the question.
   renderStats();
   // Skipped for reverse and listening questions: this shows the
-  // Japanese word's own phonetic transcription, which would hint at
+  // Chinese word's own phonetic transcription, which would hint at
   // the not-yet-revealed answer the same way playing its audio (or, for
   // listening, showing its text) early would.
   if (!isClozeQuestion && !isReverseQuestion && !isListeningQuestion) {
@@ -5328,9 +5314,9 @@ function getDisplayedGlossWordCount(displayedText) {
 // Unlike sharesEnglishSenseWith, this is a quality preference, not a safety
 // constraint — see fetchIncorrectTranslations' eligibleQualityMatched. A
 // word-count gap of more than 1 is what actually produces the
-// eliminate-without-knowing-any-Japanese distractors ("mad cow disease" as
+// eliminate-without-knowing-any-Chinese distractors ("mad cow disease" as
 // an option next to a plain one-word gloss): the mismatch has nothing to do
-// with word class — an ordinary single Japanese noun can have a long
+// with word class — an ordinary single Chinese noun can have a long
 // idiomatic English gloss same as any other — so word-class compatibility
 // alone never catches it. A small tolerance still allows ordinary variation
 // ("form" vs. a two-word gloss) without letting through a wildly
@@ -5440,10 +5426,10 @@ function fetchIncorrectTranslations(gender, correctTranslation, currentCEFR) {
 // correctEnglish is the correct word's own raw engelsk field (all
 // comma-separated senses, not just the displayed first one) — needed to
 // build the same synonym-exclusion guarantee fetchIncorrectTranslations
-// has, mirrored onto this direction: a Japanese-word option can never be
+// has, mirrored onto this direction: a Chinese-word option can never be
 // offered as wrong if the dictionary glosses it the same way as the
 // correct word. No word-count/length filter is needed here the way
-// fetchIncorrectTranslations needs one for English glosses — Japanese
+// fetchIncorrectTranslations needs one for English glosses — Chinese
 // multi-word expressions already live in their own "expression" word
 // class, so the existing class-compatibility filtering below already keeps
 // them from mixing with ordinary single-word answers.
@@ -5651,11 +5637,11 @@ function attachGameControls(wordObj, isCloze = false) {
       const missedTypedForm = document.querySelector(
         ".game-typed-answer-form.is-incorrect",
       );
-      // wordObj.word is the target Japanese answer, not what was actually
+      // wordObj.word is the target Chinese answer, not what was actually
       // on screen — a reverse question shows the English meaning and a
       // cloze question shows a sentence with a blank, either of which a
       // reviewer needs to judge "should this answer have been accepted"
-      // (e.g. the shown English gloss maps to more than one Japanese
+      // (e.g. the shown English gloss maps to more than one Chinese
       // synonym, or the blank's surrounding words support a different
       // inflection). Only worth capturing for an actual typed miss — every
       // other report path already has the full question context via the
@@ -6089,11 +6075,11 @@ async function renderWordIntroductionUI(initialEntry) {
   playWordAudio(wordObj);
 }
 
-// mode: "forward" (Japanese shown, recognize English — the default),
-// "reverse"/"typed-reverse" (English shown, recall Japanese), "listening"
-// (Japanese audio only, recognize English from options — the word's own
+// mode: "forward" (Chinese shown, recognize English — the default),
+// "reverse"/"typed-reverse" (English shown, recall Chinese), "listening"
+// (Chinese audio only, recognize English from options — the word's own
 // text is hidden until answered), or "typed-listening" (true dictation:
-// Japanese audio only, type the Japanese word you heard — no English
+// Chinese audio only, type the Chinese word you heard — no English
 // anywhere on screen).
 function renderWordGameUI(
   wordObj,
@@ -6121,10 +6107,10 @@ function renderWordGameUI(
   const wordId = wordDataStore.push(wordObj) - 1;
 
   // Reverse flashcards and dictation both ask the learner to recall the
-  // Japanese word — the answer options (and so the "correct" value
-  // handleTranslationClick checks against) are Japanese words instead of
+  // Chinese word — the answer options (and so the "correct" value
+  // handleTranslationClick checks against) are Chinese words instead of
   // English translations. Mirrors renderClozeGameUI reassigning this same
-  // global to the clozed Japanese form. Plain listening's correct answer is
+  // global to the clozed Chinese form. Plain listening's correct answer is
   // English, same as forward, so it needs no reassignment here.
   if (isReverse || isDictation) {
     correctTranslation = getPrimaryForm(wordObj);
@@ -6237,7 +6223,7 @@ function renderWordGameUI(
     `);
 
   if (isTyped) {
-    // Dictation grades as Japanese recall (see correctTranslation above)
+    // Dictation grades as Chinese recall (see correctTranslation above)
     // but isn't a "reverse" question — its prompt already carries its own
     // audio (wired below, same as plain listening), so it doesn't need
     // revealReverseWordAudio's after-the-fact fix-up, only the isListening
@@ -6271,10 +6257,10 @@ function renderWordGameUI(
 
   // Forward flashcards: let the user replay the word's pronunciation by
   // clicking it, whether they've answered yet or not — seeing and hearing
-  // the Japanese word together is just reinforcement here, since the
+  // the Chinese word together is just reinforcement here, since the
   // word itself is already fully shown. Reverse flashcards deliberately
   // skip this wiring (see revealReverseWordAudio) — the prompt is the
-  // English meaning, so unlocking Japanese audio before answering would
+  // English meaning, so unlocking Chinese audio before answering would
   // let the learner match sounds instead of recalling the word.
   if (!isReverse) {
     const gameWordElement = document.querySelector(".game-word-audio");
@@ -6498,7 +6484,7 @@ async function renderClozeGameUI(
 
 // Shared by the cloze sentence and the reverse-flashcard prompt: both
 // start deliberately non-interactive (no audio affordance) so hearing the
-// Japanese answer early can't substitute for actually recalling it, and
+// Chinese answer early can't substitute for actually recalling it, and
 // only become click/keyboard-replayable once something has made that
 // audio fair game (the sentence is complete, or the question's been
 // answered).
@@ -6569,12 +6555,12 @@ function makeSentenceClickable(element, sentenceText) {
   });
 }
 
-// Reverse flashcards show the English meaning and ask for the Japanese
+// Reverse flashcards show the English meaning and ask for the Chinese
 // word — unlike the forward flashcard, the prompt starts with no audio
-// affordance at all (hearing the Japanese pronunciation before answering
+// affordance at all (hearing the Chinese pronunciation before answering
 // would just let the learner match sounds instead of recalling the word).
 // Once answered, the audio unlocks on the correct-answer card (which is
-// where the Japanese word itself is now visible) rather than on the
+// where the Chinese word itself is now visible) rather than on the
 // prompt — the prompt is English text with no English audio behind it,
 // so making it look clickable would promise a sound that doesn't exist.
 function revealReverseWordAudio(wordObj) {
@@ -6655,7 +6641,7 @@ function announceGameAnswer(isCorrect, correctAnswer) {
     : `Incorrect. Correct answer: ${correctAnswer}`;
 }
 
-// Listening questions hide the Japanese word's text (only its audio,
+// Listening questions hide the Chinese word's text (only its audio,
 // already freely replayable from the moment the question loads — see
 // renderWordGameUI) until the question's been answered. This swaps the
 // speaker-icon placeholder for the actual word once it's fair to show it;
@@ -6702,13 +6688,13 @@ function completeClozeSentence(clozeSentence) {
 //                 full comma-containing surface form instead of just the
 //                 first dictionary alternative (correctTranslationPart /
 //                 selectedTranslationPart below).
-//   isReverse   — unlocks replaying the Japanese word's audio on the
+//   isReverse   — unlocks replaying the Chinese word's audio on the
 //                 now-visible correct card (revealReverseWordAudio). Only
 //                 needed when nothing on screen already has that audio
 //                 wired — true for reverse/typed-reverse (whose prompt is
 //                 English text), false for dictation (typed-listening),
 //                 whose prompt already carries its own audio from render.
-//   isListening — reveals the Japanese word's text, previously hidden
+//   isListening — reveals the Chinese word's text, previously hidden
 //                 behind just its audio (revealListeningWordText). True for
 //                 both plain listening and dictation.
 //   wasTyped    — whether a typed-mastery requirement on this word (see
@@ -7181,7 +7167,7 @@ async function fetchExampleSentence(
   const matchingEntry = wordObj;
 
   // Never borrow an example from a different dictionary row here. A spelling
-  // prefix is not a sense identifier in Japanese, and doing so can attach a
+  // prefix is not a sense identifier in Chinese, and doing so can attach a
   // homograph's sentence to the word the learner actually answered.
   if (!matchingEntry.eksempel || matchingEntry.eksempel.trim() === "") {
     return { exampleSentence: "", sentenceTranslation: "" };
@@ -7404,8 +7390,9 @@ const RECALL_NEED_WEIGHT_EXPONENT = 1.5;
 const RECALL_NEED_WEIGHT_FLOOR = 0.02;
 
 // Vocabulary usefulness metadata is a separate, generated sidecar rather than
-// another japaneseWords.csv column. It uses exact primary-lemma matches from
-// NINJAL's Balanced Corpus of Contemporary Written Japanese long-unit list;
+// another chineseWords.csv column. It uses exact whole-word matches on the
+// Traditional headword against NAER's COCT general word-frequency table
+// (Taiwanese Mandarin, written + spoken);
 // see VOCABULARY_FREQUENCY_DATA.md for source, terms, and build details.
 // Loading is kicked off unconditionally at script load
 // (see the bottom of this file) since it now also refines per-word
@@ -7620,7 +7607,7 @@ function getA0CurriculumCategory(entry) {
   if (wordClass === "pronoun") return "pronoun";
   if (
     A0_FUNCTION_WORD_CLASSES.has(wordClass) ||
-    ["ikke", "nå", "her", "der", "hva", "hvem", "hvor", "hvordan", "hvorfor"].includes(
+    ["不", "沒有", "這裡", "那裡", "現在", "誰", "什麼", "哪裡", "怎麼", "為什麼"].includes(
       normalizeGameAnswer(getPrimaryForm(entry)),
     )
   ) {

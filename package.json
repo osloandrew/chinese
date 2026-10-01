@@ -5,6 +5,8 @@
   "description": "Chinese Dictionary — vanilla JS/HTML/CSS with automated crawlable-page builds.",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
+    "build:frequency": "python3 scripts/build-chinese-frequency.py",
+    "build:frequency": "python3 scripts/build-chinese-frequency.py",
     "build:pages": "python3 scripts/build-static-pages.py",
     "build:updates": "python3 scripts/build-updates-page.py",
     "validate:pages": "python3 scripts/validate-static-pages.py",

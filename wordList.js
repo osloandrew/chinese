@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  // Japanese alphabetical sorting places æ, ø, and å correctly.
+  // Traditional-Chinese headwords sort by zh-TW collation (Zhuyin order).
   const japaneseCollator = new Intl.Collator("zh-TW", {
     sensitivity: "base",
     numeric: true,
