@@ -731,7 +731,7 @@ const GAME_MODES = Object.freeze({
       }
 
       const clozeTarget =
-        preparedClozeTarget ?? (await findPracticeClozeTarget(wordObj));
+        preparedClozeTarget ?? (await findClozeTarget(wordObj));
       if (!clozeTarget) {
         console.warn(
           "No reliable cloze target was found. Falling back to flashcard.",
@@ -1720,33 +1720,9 @@ function playTrackedAudio(url) {
   return audio;
 }
 
-// The word field's spelling is sometimes misread by the TTS that generated
-// these clips (e.g. kanji with an ambiguous reading), so if that file
-// doesn't exist, retry with the pronunciation field's spelling instead.
-// Built by hand rather than via playTrackedAudio, whose own .catch() would
-// otherwise log this attempt's failure as well as the fallback's -- making
-// one exhausted retry look like two separate bugs.
 function playWordAudio(wordObj) {
   if (!wordObj || !wordObj.word) return;
-  const cleanWord = getPrimaryJapaneseForm(wordObj);
-  const pronunciation = (wordObj.pronunciation || "").trim();
-  const fallbackUrl =
-    pronunciation && pronunciation !== cleanWord
-      ? buildWordAudioUrl(pronunciation)
-      : null;
-
-  const audio = new Audio(buildWordAudioUrl(cleanWord));
-  activeAudio.push(audio);
-  audio.play().catch((err) => {
-    if (fallbackUrl) {
-      audio.src = fallbackUrl;
-      audio.play().catch((fallbackErr) =>
-        console.warn("Audio playback failed:", fallbackErr),
-      );
-    } else {
-      console.warn("Audio playback failed:", err);
-    }
-  });
+  playTrackedAudio(buildWordAudioUrl(getPrimaryJapaneseForm(wordObj)));
 }
 
 function playSentenceAudio(exampleSentence) {
@@ -2125,6 +2101,51 @@ function getJapaneseEntryVariants(entry) {
         .filter(Boolean),
     ),
   ];
+}
+
+// Typed answers may be written in either script. Kept separate from
+// getJapaneseEntryVariants (which also feeds multiple-choice options and
+// cloze matching against the Traditional example sentences) so Simplified
+// spellings are only ever *accepted*, never displayed as a choice.
+function getTypedEntryVariants(entry) {
+  return [
+    ...new Set([
+      ...getJapaneseEntryVariants(entry),
+      ...getJapaneseEntryVariants({ word: entry?.wordSimp }),
+    ]),
+  ];
+}
+
+// Traditional -> Simplified is a function (many Traditional characters can
+// fold into one Simplified one, never the reverse), so the mapping can be
+// learned from the dictionary's own Traditional/Simplified pairs with no
+// hand-entered table: 後 -> 后, 發 -> 发, 髮 -> 发. Characters the
+// dictionary has not paired are left unchanged.
+let simplifiedCharMap = null;
+let simplifiedCharMapSize = -1;
+
+function getSimplifiedCharMap() {
+  if (simplifiedCharMap && simplifiedCharMapSize === results.length) {
+    return simplifiedCharMap;
+  }
+  const map = new Map();
+  for (const entry of results) {
+    const trad = [...String(entry?.word ?? "").split(/[,、]/)[0].trim()];
+    const simp = [...String(entry?.wordSimp ?? "").split(/[,、]/)[0].trim()];
+    if (trad.length !== simp.length) continue;
+    trad.forEach((char, index) => {
+      if (char !== simp[index] && !map.has(char)) map.set(char, simp[index]);
+    });
+  }
+  simplifiedCharMap = map;
+  simplifiedCharMapSize = results.length;
+  return map;
+}
+
+function toSimplifiedText(text) {
+  if (typeof results === "undefined") return String(text ?? "");
+  const map = getSimplifiedCharMap();
+  return [...String(text ?? "")].map((char) => map.get(char) ?? char).join("");
 }
 
 // --- Definition-derived synonym exercises --------------------------------
@@ -2663,7 +2684,6 @@ function recordQuestionPredictionOutcome(
   wasCorrect,
   {
     nearMiss = false,
-    morphologyNearMiss = false,
     wasTyped = false,
     wasScaffolded = false,
   } = {},
@@ -2676,20 +2696,14 @@ function recordQuestionPredictionOutcome(
   const evidenceWeight =
     (possiblyGuessed ? 0.5 : 1) *
     (wasScaffolded ? 0.7 : 1) *
-    (nearMiss || morphologyNearMiss ? 0.8 : 1);
-  const outcomeValue = nearMiss
-    ? 0.8
-    : morphologyNearMiss
-      ? 0.4
-      : wasCorrect
-        ? 1
-        : 0;
+    (nearMiss ? 0.8 : 1);
+  const outcomeValue = nearMiss ? 0.8 : wasCorrect ? 1 : 0;
   const calibrationOptions = {
     calibrationLimit: QUESTION_PAIR_CALIBRATION_LIMIT,
     evidenceWeight: evidenceWeight * 0.5,
     outcomeValue,
     responseTimeMs,
-    nearMiss: nearMiss || morphologyNearMiss,
+    nearMiss,
     possiblyGuessed,
   };
 
@@ -2715,7 +2729,7 @@ function recordQuestionPredictionOutcome(
         difficultyBucket: prediction.difficultyBucket,
         predictedSuccess: prediction.predictedSuccess,
         wasCorrect,
-        nearMiss: nearMiss || morphologyNearMiss,
+        nearMiss,
       },
       PREDICTION_EVALUATION_VERSION,
     );
@@ -2726,82 +2740,36 @@ function recordQuestionPredictionOutcome(
     ...prediction,
     responseTimeMs,
     nearMiss,
-    morphologyNearMiss,
     possiblyGuessed,
   };
 }
 
-let predictionEntryIndex = null;
-let predictionEntryIndexSource = null;
-
-function getPredictionEntryIndex() {
-  if (typeof results === "undefined") return null;
-  if (predictionEntryIndex && predictionEntryIndexSource === results) {
-    return predictionEntryIndex;
-  }
-
-  const index = new Map();
-  for (const entry of results) {
-    const wordClass = WordClass.getWordClass(entry?.gender);
-    for (const lemma of getJapaneseEntryVariants(entry)) {
-      const key = `${wordClass}:${normalizeGameAnswer(lemma)}`;
-      if (!index.has(key)) index.set(key, []);
-      index.get(key).push(entry);
-    }
-  }
-  predictionEntryIndex = index;
-  predictionEntryIndexSource = results;
-  return index;
-}
-
+// How likely the learner is to follow the rest of a cloze sentence: each
+// dictionary word outside the blank is scored by how likely the learner is to
+// know it. Words the dictionary doesn't list stay neutral rather than "hard"
+// -- names, numbers and transparent compounds are common in easy prose.
 async function getRenderedSentenceVocabularySuccess(clozeTarget) {
-  if (
-    !clozeTarget?.sentence ||
-    typeof window.Inflections?.findLemmas !== "function"
-  ) {
-    return null;
-  }
+  if (!clozeTarget?.sentence) return null;
 
-  const tokens = Array.from(
-    clozeTarget.sentence.matchAll(
-      /[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu,
-    ),
-    (match) => ({
-      text: match[0],
-      start: match.index,
-      end: match.index + match[0].length,
-    }),
-  ).filter(
+  const tokens = segmentClozeSentence(clozeTarget.sentence).filter(
     (token) =>
       token.end <= clozeTarget.startIndex ||
       token.start >= clozeTarget.endIndex,
   );
   if (tokens.length === 0) return null;
 
-  const entryIndex = getPredictionEntryIndex();
-  if (!entryIndex) return null;
-
-  const resolved = await Promise.all(
-    tokens.map((token) =>
-      window.Inflections.findLemmas(token.text).catch(() => null),
-    ),
-  );
-  const tokenSuccesses = resolved.map((resolution) => {
-    const entries = (resolution?.matches || []).flatMap(
-      ({ lemma, wordClass }) =>
-        entryIndex.get(`${wordClass}:${normalizeGameAnswer(lemma)}`) || [],
-    );
-    if (entries.length === 0) return null;
+  const learnerAbility = Number.isFinite(abilityScore)
+    ? abilityScore
+    : CEFR_DIFFICULTY_ANCHOR.A1;
+  const tokenSuccesses = tokens.map((token) => {
+    if (token.entries.length === 0) return null;
     // If a visible form has several dictionary senses, comprehension only
-    // requires the easiest plausible one. This also prevents a rare
-    // homograph from making an otherwise elementary sentence look hard.
+    // requires the easiest plausible one.
     return Math.max(
-      ...entries.map((entry) =>
+      ...token.entries.map((entry) =>
         getExpectedSuccessProbability(
           getWordDifficultyAnchor(entry),
-          Number.isFinite(abilityScore)
-            ? abilityScore
-            : CEFR_DIFFICULTY_ANCHOR.A1,
+          learnerAbility,
         ),
       ),
     );
@@ -2811,8 +2779,6 @@ async function getRenderedSentenceVocabularySuccess(clozeTarget) {
 
   const knownMean = known.reduce((sum, value) => sum + value, 0) / known.length;
   const coverage = known.length / tokenSuccesses.length;
-  // Unresolved tokens are neutral rather than automatically "hard": names,
-  // numbers, and transparent compounds are common in otherwise easy prose.
   return knownMean * coverage + 0.75 * (1 - coverage);
 }
 
@@ -2855,15 +2821,7 @@ async function getA0SafeExampleSentence(
 
 function getRenderedTargetContextCoverage(clozeTarget) {
   if (!clozeTarget?.sentence) return null;
-  const tokens = Array.from(
-    clozeTarget.sentence.matchAll(
-      /[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu,
-    ),
-    (match) => ({
-      start: match.index,
-      end: match.index + match[0].length,
-    }),
-  );
+  const tokens = segmentClozeSentence(clozeTarget.sentence);
   const before = tokens.filter(
     (token) => token.end <= clozeTarget.startIndex,
   ).length;
@@ -2928,7 +2886,6 @@ async function buildRenderedClozePredictionExercise(
     // Cloze sentence audio is intentionally locked until after grading, so
     // it is not an available pre-answer cue even when the source has audio.
     audioAvailable: false,
-    isVariedContext: Boolean(clozeTarget.isVariedContext),
   };
 }
 
@@ -3256,7 +3213,7 @@ async function createInitialRetrievalEntry(wordObj, targetMode) {
     const banned = BANNED_WORD_CLASSES.some((wordClass) =>
       String(wordObj?.gender ?? "").toLowerCase().startsWith(wordClass),
     );
-    clozeTarget = banned ? null : await findPracticeClozeTarget(wordObj);
+    clozeTarget = banned ? null : await findClozeTarget(wordObj);
     if (!clozeTarget) resolvedMode = "forward";
   }
 
@@ -3289,295 +3246,6 @@ function getNextInitialRetrievalEntry() {
   return initialRetrievalQueue.splice(index, 1)[0] ?? null;
 }
 
-function getClozeSynonymForms(wordObj, clozeTarget) {
-  if (
-    clozeTarget?.kind !== "lexical" ||
-    !["noun", "adjective", "verb"].includes(clozeTarget.wordClass) ||
-    typeof results === "undefined"
-  ) {
-    return [];
-  }
-
-  const slotIndexes = [...new Set(clozeTarget.slotIndexes || [])].filter(
-    Number.isInteger,
-  );
-  const targetEnglish = normalizeGameAnswer(
-    getDisplayedAnswer(wordObj?.engelsk),
-  );
-  if (!targetEnglish || slotIndexes.length === 0) return [];
-
-  const targetWordClass = clozeTarget.wordClass;
-  const targetGender = clozeTarget.targetGender || wordObj?.gender;
-  const acceptedAnswers = new Set();
-
-  for (const candidate of results) {
-    if (
-      !getEnglishEntryVariants(candidate).includes(targetEnglish) ||
-      WordClass.getWordClass(candidate?.gender) !== targetWordClass ||
-      (targetWordClass === "noun" &&
-        !WordClass.hasCompatibleGender(targetGender, candidate?.gender))
-    ) {
-      continue;
-    }
-
-    for (const variant of getJapaneseEntryVariants(candidate)) {
-      const parts = getClozePatternTokens(normalizeGameAnswer(variant));
-      if (parts.length !== 1 || parts[0] === "...") continue;
-
-      const paradigm = window.Inflections?.getParadigmForLemma?.(
-        parts[0],
-        targetWordClass,
-        targetWordClass === "noun" ? candidate.gender : "",
-      );
-      if (!paradigm) continue;
-
-      // A surface form can occasionally match more than one grammatical
-      // slot. Only accept a synonym form that is valid in every remaining
-      // slot, so a present-tense cloze cannot accidentally accept a past or
-      // infinitive form (and noun/adjective agreement remains exact too).
-      const compatibleForms = slotIndexes.reduce((forms, slotIndex) => {
-        const slotForms = paradigm.slots[slotIndex] || [];
-        if (forms === null) return [...slotForms];
-        const currentSlot = new Set(slotForms);
-        return forms.filter((form) => currentSlot.has(form));
-      }, null);
-
-      for (const form of compatibleForms || []) {
-        acceptedAnswers.add(form);
-      }
-    }
-  }
-
-  return [...acceptedAnswers];
-}
-
-// Indexed to match getParadigmForLemma's own slot order for each word class
-// (inflections.js:getParadigmForLemma), which in turn mirrors the row order
-// of that file's verbFormsTable/iAdjectiveFormsTable -- so a slot index
-// always names the same form here as it does in the learner-facing Word
-// Forms table. A noun has exactly one slot: Japanese nouns do not inflect.
-const MORPHOLOGY_SLOT_LABELS = Object.freeze({
-  noun: Object.freeze(["the dictionary form"]),
-  adjective: Object.freeze([
-    "the dictionary form",
-    "the negative form",
-    "the polite negative form",
-    "the past form",
-    "the polite past form",
-    "the past negative form",
-    "the polite past negative form",
-    "the te-form",
-    "the adverbial form",
-    "the conditional form (ば)",
-  ]),
-  verb: Object.freeze([
-    "the dictionary form",
-    "the polite form (ます)",
-    "the negative form",
-    "the polite negative form (ません)",
-    "the past form",
-    "the polite past form (ました)",
-    "the past negative form",
-    "the polite past negative form (ませんでした)",
-    "the te-form",
-    "the negative te-form (ないで)",
-    "the たい form",
-    "the negative たい form (たくない)",
-    "the volitional form",
-    "the polite volitional form (ましょう)",
-    "the conditional form (ば)",
-    "the imperative form",
-    "the potential form",
-    "the potential te-form",
-    "the passive form",
-    "the passive te-form",
-    "the causative form",
-    "the causative te-form",
-    "the causative-passive form",
-    "the causative-passive te-form",
-  ]),
-});
-
-function getTypedMorphologyCandidateEntries(
-  wordObj,
-  { isCloze = false, isListening = false, clozeTarget = null } = {},
-) {
-  const targetWordClass = isCloze
-    ? clozeTarget?.wordClass
-    : WordClass.getWordClass(wordObj?.gender);
-  if (!["noun", "adjective", "verb"].includes(targetWordClass)) return [];
-  if (isCloze && clozeTarget?.kind !== "lexical") return [];
-  if (isListening || typeof results === "undefined") return [wordObj];
-
-  const targetEnglish = normalizeGameAnswer(
-    getDisplayedAnswer(wordObj?.engelsk),
-  );
-  if (!targetEnglish) return [wordObj];
-  const targetGender = clozeTarget?.targetGender || wordObj?.gender;
-  return results.filter(
-    (candidate) =>
-      getEnglishEntryVariants(candidate).includes(targetEnglish) &&
-      WordClass.getWordClass(candidate?.gender) === targetWordClass &&
-      (targetWordClass !== "noun" ||
-        WordClass.hasCompatibleGender(targetGender, candidate?.gender)),
-  );
-}
-
-function getMorphologyRequiredForms(paradigm, slotIndexes) {
-  const forms = slotIndexes.reduce((accepted, slotIndex) => {
-    const slotForms = paradigm.slots[slotIndex] || [];
-    if (accepted === null) return [...slotForms];
-    const currentSlot = new Set(slotForms);
-    return accepted.filter((form) => currentSlot.has(form));
-  }, null);
-  return forms || [];
-}
-
-async function classifyTypedMorphologyNearMiss(
-  wordObj,
-  selectedAnswer,
-  {
-    isCloze = false,
-    isReverse = false,
-    isListening = false,
-    clozeTarget = null,
-    correctAnswer = "",
-  } = {},
-) {
-  const normalizedSelected = normalizeGameAnswer(selectedAnswer);
-  if (
-    !normalizedSelected ||
-    (!isCloze && !isReverse && !isListening) ||
-    typeof window.Inflections?.findLemmas !== "function"
-  ) {
-    return null;
-  }
-
-  const candidates = getTypedMorphologyCandidateEntries(wordObj, {
-    isCloze,
-    isListening,
-    clozeTarget,
-  });
-  const analyses = [];
-  for (const candidate of candidates) {
-    const wordClass = isCloze
-      ? clozeTarget.wordClass
-      : WordClass.getWordClass(candidate?.gender);
-    // clozeTarget.slotIndexes can include more than one paradigm slot when
-    // an adjective's conjugated forms happen to be spelled identically
-    // across those slots (getParadigmSlotsForLemma matches by exact
-    // surface-form string, not by which conjugation the sentence actually
-    // intends) -- intersecting a synonym's forms across every one of those
-    // slots comes back empty whenever that synonym's own forms actually
-    // differ per slot.
-    const requiredSlots = isCloze
-      ? [...new Set(clozeTarget?.slotIndexes || [])].filter(Number.isInteger)
-      : [0];
-    if (requiredSlots.length === 0) continue;
-
-    for (const variant of getJapaneseEntryVariants(candidate)) {
-      const parts = getClozePatternTokens(normalizeGameAnswer(variant));
-      if (parts.length !== 1 || parts[0] === "...") continue;
-      const paradigm = window.Inflections?.getParadigmForLemma?.(
-        parts[0],
-        wordClass,
-        wordClass === "noun" ? candidate.gender : "",
-      );
-      if (!paradigm) continue;
-      const selectedSlots = paradigm.slots.flatMap((forms, slotIndex) =>
-        forms.includes(normalizedSelected) ? [slotIndex] : [],
-      );
-      if (
-        selectedSlots.length === 0 ||
-        requiredSlots.every((slot) => selectedSlots.includes(slot))
-      ) {
-        continue;
-      }
-      const requiredForms = getMorphologyRequiredForms(paradigm, requiredSlots);
-      if (requiredForms.length === 0) continue;
-      analyses.push({
-        lemma: parts[0],
-        wordClass,
-        selectedSlots,
-        requiredSlots,
-        requiredForms,
-      });
-    }
-  }
-  if (analyses.length === 0) return null;
-
-  const resolution = await window.Inflections.findLemmas(selectedAnswer);
-  if (!["exact", "possessive"].includes(resolution?.matchType)) return null;
-  const relevantKeys = new Set(
-    analyses.map(({ lemma, wordClass }) => `${wordClass}:${lemma}`),
-  );
-  const resolutionKeys = new Set(
-    (resolution.matches || []).map(
-      ({ lemma, wordClass }) =>
-        `${wordClass}:${normalizeGameAnswer(lemma)}`,
-    ),
-  );
-  if (![...resolutionKeys].some((key) => relevantKeys.has(key))) return null;
-  const relevantWordClasses = new Set(
-    analyses.map(({ wordClass }) => wordClass),
-  );
-  const contextualResolutionKeys = new Set(
-    (resolution.matches || [])
-      .filter(({ wordClass }) => relevantWordClasses.has(wordClass))
-      .map(
-        ({ lemma, wordClass }) =>
-          `${wordClass}:${normalizeGameAnswer(lemma)}`,
-      ),
-  );
-
-  let correction = analyses[0].requiredForms[0] || correctAnswer;
-  if (isCloze && clozeTarget?.startsSentence) {
-    correction = uppercaseFirstJapanese(correction);
-  }
-  const selectedLabels = new Set(
-    analyses.flatMap(({ selectedSlots, wordClass }) =>
-      selectedSlots
-        .map((slot) => MORPHOLOGY_SLOT_LABELS[wordClass]?.[slot])
-        .filter(Boolean),
-    ),
-  );
-  const requiredLabels = new Set(
-    analyses.flatMap(({ requiredSlots, wordClass }) =>
-      requiredSlots
-        .map((slot) => MORPHOLOGY_SLOT_LABELS[wordClass]?.[slot])
-        .filter(Boolean),
-    ),
-  );
-  const isUnambiguous =
-    contextualResolutionKeys.size === 1 &&
-    selectedLabels.size === 1 &&
-    requiredLabels.size === 1;
-  let message = `Almost — this exercise needs “${correction}”.`;
-  let repairPrompt = "";
-  if (isUnambiguous) {
-    const selectedLabel = [...selectedLabels][0];
-    if (!isCloze && analyses[0].requiredSlots.includes(0)) {
-      message = `Almost — “${selectedAnswer}” is ${selectedLabel}. This exercise asks for the dictionary form: “${correction}”.`;
-      repairPrompt = `Almost — right word, wrong form. “${selectedAnswer}” is ${selectedLabel}. This exercise asks for the dictionary form. Try again.`;
-    } else {
-      const requiredLabel = [...requiredLabels][0];
-      message = `Almost — “${selectedAnswer}” is ${selectedLabel}. This sentence needs ${requiredLabel}: “${correction}”.`;
-      repairPrompt = `Almost — right word, wrong form. “${selectedAnswer}” is ${selectedLabel}. This sentence needs ${requiredLabel}. Try again.`;
-    }
-  }
-
-  return {
-    outcomeValue: 0.4,
-    correction,
-    message,
-    repairPrompt,
-    selectedAnswer,
-    selectedLabels: [...selectedLabels],
-    requiredLabels: [...requiredLabels],
-    isUnambiguous,
-  };
-}
-
 function getTypedAcceptedAnswers(
   wordObj,
   isCloze,
@@ -3585,15 +3253,12 @@ function getTypedAcceptedAnswers(
   clozeTarget = null,
 ) {
   if (isCloze) {
-    return [
-      ...new Set([
-        normalizeGameWhitespace(correctAnswer),
-        ...getClozeSynonymForms(wordObj, clozeTarget),
-      ]),
-    ];
+    // The sentence is Traditional; a Simplified spelling is also accepted.
+    const clozeAnswer = normalizeGameWhitespace(correctAnswer);
+    return [...new Set([clozeAnswer, toSimplifiedText(clozeAnswer)])];
   }
 
-  const acceptedAnswers = new Set(getJapaneseEntryVariants(wordObj));
+  const acceptedAnswers = new Set(getTypedEntryVariants(wordObj));
   const targetEnglish = normalizeGameAnswer(
     getDisplayedAnswer(wordObj?.engelsk),
   );
@@ -3613,7 +3278,7 @@ function getTypedAcceptedAnswers(
     ) {
       continue;
     }
-    getJapaneseEntryVariants(candidate).forEach((variant) =>
+    getTypedEntryVariants(candidate).forEach((variant) =>
       acceptedAnswers.add(variant),
     );
   }
@@ -3647,607 +3312,155 @@ function uppercaseFirstJapanese(value) {
   return characters.join("");
 }
 
-function restoreDictionaryCase(value, dictionaryForm) {
-  const normalizedValue = normalizeGameWhitespace(value);
-  const reference = normalizeGameWhitespace(dictionaryForm);
-  if (!normalizedValue || !reference) return normalizedValue;
+// --- Cloze targets --------------------------------------------------------
+// Chinese has no spaces between words, so a sentence can't be split into
+// words by whitespace. The dictionary's own headwords stand in for a
+// segmenter: a forward longest-match pass over the sentence finds the word
+// boundaries, and a word only becomes a cloze target where one of those
+// boundaries lines up with it. That keeps 時候 from being blanked out of
+// 什麼時候, or 上 out of 上午, since the longer headword wins there.
+let clozeLexiconSource = null;
+let clozeLexicon = { forms: new Map(), maxLength: 1 };
 
-  const foldedValue = normalizeGameAnswer(normalizedValue);
-  const foldedReference = normalizeGameAnswer(reference);
-  if (foldedValue.startsWith(foldedReference)) {
-    return reference + normalizedValue.slice(reference.length);
-  }
+function getClozeLexicon() {
+  if (typeof results === "undefined") return clozeLexicon;
+  if (clozeLexiconSource === results) return clozeLexicon;
 
-  const referenceTokens =
-    reference.match(/[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu) || [];
-  let tokenIndex = 0;
-  return normalizedValue.replace(
-    /[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu,
-    (token) => {
-      const referenceToken = referenceTokens[tokenIndex++] || "";
-      if (!referenceToken) return token;
-      if (
-        referenceToken === referenceToken.toLocaleUpperCase("zh-TW") &&
-        referenceToken !== referenceToken.toLocaleLowerCase("zh-TW")
-      ) {
-        return token.toLocaleUpperCase("zh-TW");
-      }
-      return /^[\p{Lu}]/u.test(referenceToken)
-        ? uppercaseFirstJapanese(token)
-        : token;
-    },
-  );
-}
-
-function getIndexedClozeTokens(text) {
-  return Array.from(
-    String(text ?? "").matchAll(
-      /[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu,
-    ),
-    (match) => ({
-      text: match[0],
-      start: match.index,
-      end: match.index + match[0].length,
-    }),
-  );
-}
-
-function getClozePatternTokens(value) {
-  return (
-    normalizeGameWhitespace(value).match(
-      /\.{3}|[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu,
-    ) || []
-  );
-}
-
-function getParadigmSlotsForLemma(lemma, surface, wordClass, gender = "") {
-  const paradigm = window.Inflections?.getParadigmForLemma?.(
-    normalizeGameAnswer(lemma),
-    wordClass,
-    gender,
-  );
-  const normalizedSurface = normalizeGameAnswer(surface);
-  return paradigm
-    ? paradigm.slots.flatMap((forms, index) =>
-        forms.includes(normalizedSurface) ? [index] : [],
-      )
-    : [];
-}
-
-let gameNounGenderIndexSource = null;
-let gameNounGendersByLemma = new Map();
-
-function getGameNounGendersByLemma() {
-  if (typeof results === "undefined") return new Map();
-  if (gameNounGenderIndexSource === results) return gameNounGendersByLemma;
-
-  const nextIndex = new Map();
+  const forms = new Map();
+  let maxLength = 1;
   for (const entry of results) {
-    if (!WordClass.isNounGender(entry?.gender)) continue;
-    for (const variant of getJapaneseEntryVariants(entry)) {
-      const tokens = getClozePatternTokens(variant);
-      if (
-        tokens.length !== 1 ||
-        normalizeGameAnswer(tokens[0]) !== normalizeGameAnswer(variant)
-      ) {
-        continue;
-      }
-      const lemma = normalizeGameAnswer(variant);
-      const genders = nextIndex.get(lemma) || [];
-      genders.push(entry.gender);
-      nextIndex.set(lemma, genders);
+    for (const form of getTypedEntryVariants(entry)) {
+      const key = normalizeGameAnswer(form);
+      if (!key) continue;
+      if (!forms.has(key)) forms.set(key, []);
+      forms.get(key).push(entry);
+      maxLength = Math.max(maxLength, key.length);
     }
   }
-
-  gameNounGenderIndexSource = results;
-  gameNounGendersByLemma = nextIndex;
-  return gameNounGendersByLemma;
+  clozeLexiconSource = results;
+  clozeLexicon = { forms, maxLength };
+  return clozeLexicon;
 }
 
-function hasCompetingAdjectiveEntry(wordObj, lemma) {
-  if (typeof results === "undefined") return false;
-  const normalizedLemma = normalizeGameAnswer(lemma);
-  return results.some(
-    (entry) =>
-      entry !== wordObj &&
-      WordClass.getWordClass(entry?.gender) === "adjective" &&
-      getJapaneseEntryVariants(entry).some(
-        (variant) => normalizeGameAnswer(variant) === normalizedLemma,
-      ),
-  );
-}
-
-function matchesClozePatternToken(patternToken, surfaceToken, wordObj, isSingle) {
-  if (normalizeGameAnswer(patternToken) === normalizeGameAnswer(surfaceToken)) {
-    return true;
-  }
-
-  const entryWordClass = WordClass.getWordClass(wordObj.gender);
-  if (
-    isSingle &&
-    ["noun", "adjective", "verb"].includes(entryWordClass)
-  ) {
-    return (
-      getParadigmSlotsForLemma(
-        patternToken,
-        surfaceToken,
-        entryWordClass,
-        entryWordClass === "noun" ? wordObj.gender : "",
-      ).length > 0
-    );
-  }
-
-  // A complex expression does not declare the grammatical class of each
-  // component. Try every inflectable class, but still require an exact
-  // official paradigm form; this supports "gå på skinner" -> "går på
-  // skinner" without reviving prefix or suffix guesses.
-  return ["verb", "adjective", "noun"].some(
-    (wordClass) =>
-      getParadigmSlotsForLemma(patternToken, surfaceToken, wordClass).length >
-      0,
-  );
-}
-
-function matchClozePatternAt(patternTokens, sentenceTokens, startIndex, wordObj) {
-  const isSingle =
-    patternTokens.length === 1 && patternTokens[0] !== "...";
-
-  const walk = (patternIndex, sentenceIndex) => {
-    if (patternIndex === patternTokens.length) return sentenceIndex;
-    if (sentenceIndex >= sentenceTokens.length) return -1;
-
-    const patternToken = patternTokens[patternIndex];
-    if (patternToken === "...") {
-      const minimumRemaining = patternTokens
-        .slice(patternIndex + 1)
-        .filter((token) => token !== "...").length;
-      const latestNextIndex = sentenceTokens.length - minimumRemaining;
-      for (
-        let nextIndex = sentenceIndex + 1;
-        nextIndex <= latestNextIndex;
-        nextIndex++
-      ) {
-        const endIndex = walk(patternIndex + 1, nextIndex);
-        if (endIndex >= 0) return endIndex;
-      }
-      return -1;
+// Splits a sentence into dictionary words (each token lists the entries
+// spelled that way), single unknown characters, and runs of Latin letters or
+// digits. Punctuation and spaces are skipped.
+function segmentClozeSentence(sentence) {
+  const { forms, maxLength } = getClozeLexicon();
+  const tokens = [];
+  let index = 0;
+  while (index < sentence.length) {
+    if (!/[\p{L}\p{N}]/u.test(sentence[index])) {
+      index += 1;
+      continue;
     }
 
-    if (
-      !matchesClozePatternToken(
-        patternToken,
-        sentenceTokens[sentenceIndex].text,
-        wordObj,
-        isSingle,
-      )
+    let length = 0;
+    let entries = [];
+    for (
+      let candidate = Math.min(maxLength, sentence.length - index);
+      candidate >= 1;
+      candidate -= 1
     ) {
-      return -1;
+      const matched = forms.get(
+        normalizeGameAnswer(sentence.slice(index, index + candidate)),
+      );
+      if (matched) {
+        length = candidate;
+        entries = matched;
+        break;
+      }
     }
-    return walk(patternIndex + 1, sentenceIndex + 1);
-  };
-
-  return walk(0, startIndex);
-}
-
-function getPhraseSlotDescriptor(
-  wordObj,
-  patternTokens,
-  matchedSentenceTokens,
-) {
-  if (
-    patternTokens.includes("...") ||
-    patternTokens.length !== matchedSentenceTokens.length
-  ) {
-    return null;
-  }
-
-  const entryWordClass = WordClass.getWordClass(wordObj.gender);
-  const createDescriptor = (componentIndex, wordClass, gender = "") => {
-    const slotIndexes = getParadigmSlotsForLemma(
-      patternTokens[componentIndex],
-      matchedSentenceTokens[componentIndex].text,
-      wordClass,
-      gender,
-    );
-    if (slotIndexes.length === 0) return null;
-    return {
-      componentIndex,
-      position:
-        componentIndex === 0
-          ? "first"
-          : componentIndex === patternTokens.length - 1
-            ? "last"
-            : "index",
-      wordClass,
-      slotIndexes,
-    };
-  };
-
-  if (["noun", "adjective", "verb"].includes(entryWordClass)) {
-    const componentIndex = entryWordClass === "noun" ? patternTokens.length - 1 : 0;
-    return createDescriptor(
-      componentIndex,
-      entryWordClass,
-      entryWordClass === "noun" ? wordObj.gender : "",
-    );
-  }
-
-  // Expressions do not identify the class of each component. A visibly
-  // inflected component can still be aligned to an official slot; a fully
-  // unchanged fixed expression needs no synthetic inflection at all and is
-  // left as a phrase instead of assigning a random noun/verb role to one of
-  // its unchanged words.
-  const componentOrder = patternTokens
-    .map((token, index) => ({
-      index,
-      changed:
-        normalizeGameAnswer(token) !==
-        normalizeGameAnswer(matchedSentenceTokens[index].text),
-    }))
-    .filter(({ changed }) => changed)
-    .sort((a, b) => Number(b.changed) - Number(a.changed));
-  for (const { index } of componentOrder) {
-    for (const wordClass of ["verb", "adjective", "noun"]) {
-      const descriptor = createDescriptor(index, wordClass);
-      if (descriptor) return descriptor;
+    if (length === 0) {
+      length = /[A-Za-z0-9]/.test(sentence[index])
+        ? sentence.slice(index).match(/^[A-Za-z0-9]+/)[0].length
+        : 1;
     }
+
+    tokens.push({
+      text: sentence.slice(index, index + length),
+      start: index,
+      end: index + length,
+      entries,
+    });
+    index += length;
   }
-  return null;
+  return tokens;
 }
 
-function createClozeTarget(
-  wordObj,
-  sentence,
-  sentenceIndex,
-  sentenceTokens,
-  firstTokenIndex,
-  endTokenIndex,
-  variant,
-  patternTokens,
-) {
-  const startIndex = sentenceTokens[firstTokenIndex].start;
-  const endIndex = sentenceTokens[endTokenIndex - 1].end;
-  const surfaceForm = sentence.slice(startIndex, endIndex);
-  const wordClass = WordClass.getWordClass(wordObj.gender);
-  const isLexical =
-    patternTokens.length === 1 &&
-    patternTokens[0] !== "..." &&
-    ["noun", "adjective", "verb"].includes(wordClass);
-  const targetLemma = patternTokens.find((token) => token !== "...") || "";
-  const slotIndexes = isLexical
-    ? getParadigmSlotsForLemma(
-        targetLemma,
-        surfaceForm,
-        wordClass,
-        wordClass === "noun" ? wordObj.gender : "",
-      )
-    : [];
-  const matchedSentenceTokens = sentenceTokens.slice(
-    firstTokenIndex,
-    endTokenIndex,
-  );
-  const phraseSlot = isLexical
-    ? null
-    : getPhraseSlotDescriptor(wordObj, patternTokens, matchedSentenceTokens);
-
-  // If a noun and adjective share the same dictionary spelling, a bare noun
-  // lemma immediately modifying another noun is an adjective use. Rejecting
-  // that source row is safer than teaching noun distractors in an adjective
-  // context; the correctly classified adjective entry remains eligible for
-  // its own cloze question. Punctuation blocks this check, so appositives are
-  // not mistaken for attributive adjectives.
-  const followingSentenceToken = sentenceTokens[endTokenIndex];
-  const nounUsedAttributively =
-    isLexical &&
-    wordClass === "noun" &&
-    normalizeGameAnswer(surfaceForm) === normalizeGameAnswer(targetLemma) &&
-    followingSentenceToken &&
-    /^\s*$/u.test(sentence.slice(endIndex, followingSentenceToken.start)) &&
-    getGameNounGendersByLemma().has(
-      normalizeGameAnswer(followingSentenceToken.text),
-    ) &&
-    hasCompetingAdjectiveEntry(wordObj, targetLemma);
-  if (nounUsedAttributively) return null;
-
-  return {
-    sentence,
-    sentenceIndex,
-    sentenceTranslation: getGameSentenceTranslation(wordObj, sentenceIndex),
-    surfaceForm,
-    startIndex,
-    endIndex,
-    startsSentence: /^[^\p{L}\p{N}]*$/u.test(
-      sentence.slice(0, startIndex),
-    ),
-    slotIndexes,
-    targetLemma,
-    wordClass,
-    wordCount: endTokenIndex - firstTokenIndex,
-    kind: isLexical ? "lexical" : "phrase",
-    template: variant,
-    templateTokens: patternTokens,
-    phraseSlot,
-    requiresInflectionAgreement:
-      !isLexical && ["noun", "adjective", "verb"].includes(wordClass),
-  };
-}
-
-// Unlike the general lexical/phrase cloze path above, there is no
-// per-component "anchor" to pick out here: expressionPatterns.js already
-// folds a conjugating tail (くれる in てくれる) into the matcher's own
-// surface-form list, so whatever it finds is matched and blanked as one
-// fixed unit -- there's no separate object/reflexive/case agreement for
-// Japanese's contiguous, non-declining expressions to preserve around it.
-async function findExpressionClozeTarget(wordObj, preferredForm = "") {
-  const analysis = await window.ExpressionPatterns?.getAnalysis(wordObj);
-  const exampleText = normalizeGameWhitespace(wordObj?.eksempel);
-  if (!analysis || !exampleText) return null;
-  // eksempel always holds exactly one sentence.
-  const sentences = [exampleText];
-  const normalizedPreferredForm = normalizeGameAnswer(preferredForm);
-  let firstMatch = null;
-
-  for (let sentenceIndex = 0; sentenceIndex < sentences.length; sentenceIndex++) {
-    const sentence = sentences[sentenceIndex];
-    const match = analysis.matcher.find(sentence);
-    if (!match) continue;
-
-    const target = {
-      sentence,
-      sentenceIndex,
-      sentenceTranslation: getGameSentenceTranslation(wordObj, sentenceIndex),
-      surfaceForm: match.matchedText,
-      startIndex: match.start,
-      endIndex: match.end,
-      startsSentence: /^[^\p{L}\p{N}]*$/u.test(
-        sentence.slice(0, match.start),
-      ),
-      slotIndexes: [],
-      targetLemma: "",
-      wordClass: "expression",
-      wordCount: 1,
-      kind: "phrase",
-      template: match.matchedText,
-      templateTokens: [match.matchedText],
-      phraseSlot: null,
-      requiresInflectionAgreement: false,
-      expressionAnalysis: analysis,
-    };
-
-    if (
-      normalizedPreferredForm &&
-      normalizeGameAnswer(target.surfaceForm) === normalizedPreferredForm
+// True when a longer dictionary word that contains [start, end) is spelled at
+// that spot in the sentence, e.g. 時候 inside 什麼時候. A longer word that only
+// overlaps the span (天天 against the 天 of 明天天氣) does not count.
+function isInsideLongerClozeWord(sentence, start, end) {
+  const { forms, maxLength } = getClozeLexicon();
+  const spanLength = end - start;
+  for (let from = Math.max(0, start - maxLength + 1); from <= start; from += 1) {
+    for (
+      let length = Math.max(end - from, spanLength + 1);
+      length <= maxLength && from + length <= sentence.length;
+      length += 1
     ) {
-      return target;
+      if (forms.has(normalizeGameAnswer(sentence.slice(from, from + length)))) {
+        return true;
+      }
     }
-    firstMatch ||= target;
   }
-  return firstMatch;
+  return false;
 }
 
 async function findClozeTarget(wordObj, preferredForm = "") {
-  if (WordClass.getWordClass(wordObj?.gender) === "expression") {
-    return findExpressionClozeTarget(wordObj, preferredForm);
-  }
-  const exampleText = normalizeGameWhitespace(wordObj?.eksempel);
-  const variants = getJapaneseEntryVariants(wordObj)
-    .map((variant) => ({
-      variant,
-      tokens: getClozePatternTokens(variant),
-    }))
-    .filter((candidate) => candidate.tokens.length > 0)
-    .sort((a, b) => b.tokens.length - a.tokens.length);
-  if (!exampleText || variants.length === 0) return null;
+  const sentence = normalizeGameWhitespace(wordObj?.eksempel);
+  if (!sentence) return null;
 
-  // eksempel always holds exactly one sentence.
-  const sentences = [exampleText];
+  // Longest spelling first, so a word's own longer variant is preferred.
+  const variants = getTypedEntryVariants(wordObj).sort(
+    (a, b) => b.length - a.length,
+  );
   const normalizedPreferredForm = normalizeGameAnswer(preferredForm);
   let firstMatch = null;
 
-  for (let sentenceIndex = 0; sentenceIndex < sentences.length; sentenceIndex++) {
-    const sentence = sentences[sentenceIndex];
-    const sentenceTokens = getIndexedClozeTokens(sentence);
-
-    for (let firstTokenIndex = 0; firstTokenIndex < sentenceTokens.length; firstTokenIndex++) {
-      for (const { variant, tokens: patternTokens } of variants) {
-        const endTokenIndex = matchClozePatternAt(
-          patternTokens,
-          sentenceTokens,
-          firstTokenIndex,
-          wordObj,
-        );
-        if (endTokenIndex <= firstTokenIndex) continue;
-
-        const target = createClozeTarget(
-          wordObj,
+  for (const variant of variants) {
+    let start = sentence.indexOf(variant);
+    while (start !== -1) {
+      const end = start + variant.length;
+      if (!isInsideLongerClozeWord(sentence, start, end)) {
+        const target = {
           sentence,
-          sentenceIndex,
-          sentenceTokens,
-          firstTokenIndex,
-          endTokenIndex,
-          variant,
-          patternTokens,
-        );
-        if (!target) continue;
+          sentenceIndex: 0,
+          sentenceTranslation: getGameSentenceTranslation(wordObj, 0),
+          surfaceForm: variant,
+          startIndex: start,
+          endIndex: end,
+          wordClass: WordClass.getWordClass(wordObj.gender),
+        };
         if (
           normalizedPreferredForm &&
-          normalizeGameAnswer(target.surfaceForm) === normalizedPreferredForm
+          normalizeGameAnswer(variant) === normalizedPreferredForm
         ) {
           return target;
         }
         firstMatch ||= target;
       }
+      start = sentence.indexOf(variant, start + 1);
     }
   }
 
   return firstMatch;
 }
 
-const variedGameContextTargets = new WeakMap();
-
-function getGameHomographEntries(wordObj) {
-  if (!wordObj || typeof results === "undefined") return [wordObj].filter(Boolean);
-  const selectedLemmas = new Set(
-    getJapaneseEntryVariants(wordObj).map(normalizeGameAnswer).filter(Boolean),
-  );
-  return results.filter((entry) =>
-    getJapaneseEntryVariants(entry).some((variant) =>
-      selectedLemmas.has(normalizeGameAnswer(variant)),
-    ),
-  );
-}
-
-function hasCompetingGameHomograph(wordObj) {
-  return getGameHomographEntries(wordObj).some((entry) => entry !== wordObj);
-}
-
-async function isVariedClozeTargetUnambiguous(wordObj, clozeTarget) {
-  if (!wordObj || !clozeTarget) return false;
-  if (WordClass.getWordClass(wordObj.gender) === "expression") return true;
-  if (typeof window.Inflections?.findLemmas !== "function") return false;
-
-  // Resolve across every word class. Asking only for the intended class
-  // would hide precisely the cross-class homographs this gate must catch.
-  const resolution = await window.Inflections.findLemmas(
-    clozeTarget.surfaceForm,
-  );
-  if (!["exact", "possessive"].includes(resolution?.matchType)) return false;
-
-  const selectedLemmas = new Set(
-    getJapaneseEntryVariants(wordObj).map(normalizeGameAnswer).filter(Boolean),
-  );
-  const matches = resolution.matches || [];
-  return (
-    matches.length > 0 &&
-    matches.every(
-      (match) =>
-        match.wordClass === clozeTarget.wordClass &&
-        selectedLemmas.has(normalizeGameAnswer(match.lemma)),
-    )
-  );
-}
-
-async function buildVariedGameContextTargets(wordObj) {
-  // Morphology can distinguish many surface forms, but it cannot distinguish
-  // two dictionary senses with the same lemma. In that situation even a
-  // perfectly matched sentence form is not evidence for the intended sense,
-  // so variation stays disabled and the entry-owned sentence remains stable.
-  if (
-    !wordObj?.word ||
-    hasCompetingGameHomograph(wordObj) ||
-    typeof window.SentenceFormMatching?.collectExamples !== "function"
-  ) {
-    return [];
-  }
-
-  const isExpression = WordClass.getWordClass(wordObj.gender) === "expression";
-  const homographs = getGameHomographEntries(wordObj);
-  let matcher;
-  let candidateEntries = results;
-
-  if (isExpression) {
-    const analysis = await window.ExpressionPatterns?.getAnalysis(wordObj);
-    if (!analysis?.matcher) return [];
-    matcher = analysis.matcher;
-    if (typeof getExpressionSentenceCandidates === "function") {
-      candidateEntries = getExpressionSentenceCandidates(wordObj, analysis);
-    }
-  } else {
-    const forms = await window.Inflections?.getSupplementalSentenceForms?.(
-      wordObj,
-      homographs,
-    );
-    if (!forms?.length) return [];
-    matcher = window.SentenceFormMatching.createMatcher(forms, results);
-  }
-
-  const { supplemental } = window.SentenceFormMatching.collectExamples(
-    wordObj,
-    candidateEntries,
-    matcher,
-    40,
-    homographs.filter((entry) => entry !== wordObj),
-  );
-  const targets = [];
-  for (const example of supplemental) {
-    const exampleEntry = {
-      ...wordObj,
-      eksempel: example.eksempel,
-      sentenceTranslation: example.sentenceTranslation || "",
-      sentenceAudio: example.sentenceAudio || "",
-    };
-    const target = await findClozeTarget(exampleEntry);
-    if (!target || !(await isVariedClozeTargetUnambiguous(wordObj, target))) {
-      continue;
-    }
-    target.isVariedContext = true;
-    targets.push(target);
-    if (targets.length >= 12) break;
-  }
-  return targets;
-}
-
-function getVariedGameContextTargets(wordObj) {
-  if (!wordObj || (typeof wordObj !== "object" && typeof wordObj !== "function")) {
-    return Promise.resolve([]);
-  }
-  if (!variedGameContextTargets.has(wordObj)) {
-    variedGameContextTargets.set(
-      wordObj,
-      buildVariedGameContextTargets(wordObj).catch((error) => {
-        console.warn("Could not build verified varied contexts.", error);
-        return [];
-      }),
-    );
-  }
-  return variedGameContextTargets.get(wordObj);
-}
-
-async function findPracticeClozeTarget(wordObj) {
-  const stableTarget = await findClozeTarget(wordObj);
-  if (!stableTarget) return null;
-
-  const contextSnapshot =
-    window.WordStrengthAPI?.getSkillSnapshot?.(wordObj, "context") ?? null;
-  if (!window.WordGamePolicy.shouldUseVariedContext(contextSnapshot)) {
-    return stableTarget;
-  }
-
-  const variedTargets = await getVariedGameContextTargets(wordObj);
-  const index = window.WordGamePolicy.getVariedContextIndex(
-    contextSnapshot,
-    variedTargets.length,
-  );
-  return index >= 0 ? variedTargets[index] : stableTarget;
-}
-
 function formatCorrectClozeChoice(wordObj, clozeTarget) {
-  let choice = restoreDictionaryCase(
-    clozeTarget.surfaceForm,
-    clozeTarget.template || getPrimaryJapaneseForm(wordObj),
-  );
-  if (clozeTarget.startsSentence) {
-    choice = uppercaseFirstJapanese(choice);
-  }
-  return choice;
+  return clozeTarget.surfaceForm;
 }
 
 function prepareClozeChoices(wordObj, clozeTarget, distractors) {
   const correctChoice = formatCorrectClozeChoice(wordObj, clozeTarget);
-  const formattedDistractors = distractors.map((choice) =>
-    clozeTarget.startsSentence ? uppercaseFirstJapanese(choice) : choice,
-  );
   const choices = ensureUniqueDisplayedValues(
-    shuffleArray([correctChoice, ...formattedDistractors]),
+    shuffleArray([correctChoice, ...distractors]),
     true,
   );
   return { correctChoice, choices };
 }
 
-// Shown every time the word game is (re)entered, before any question is
-// fetched — lets the learner choose a bounded round (a specific number of
-// words to learn, with missed words requeued until answered correctly —
-// see handleTranslationClick) or an unbounded, endless drill.
 function getTodayPracticeQueueSummary() {
   const eligibleEntries = getEligibleGameWords("", {
     ignorePrevious: true,
@@ -7011,55 +6224,6 @@ const GAME_OUTCOME_ICON_SVG = Object.freeze({
     '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4.4 3.3 8 6.9l3.6-3.6 1.4 1.4L9.4 8.3 13 11.9l-1.4 1.4L8 9.7l-3.6 3.6-1.4-1.4L6.6 8.3 3 4.7Z"/></svg>',
 });
 
-function getMorphologyFormContrast(morphologyNearMiss) {
-  const selected = normalizeGameWhitespace(morphologyNearMiss?.selectedAnswer);
-  const correction = normalizeGameWhitespace(morphologyNearMiss?.correction);
-  if (!selected || !correction) return "";
-
-  const selectedLabel = morphologyNearMiss.selectedLabels?.[0] || "";
-  const requiredLabel = morphologyNearMiss.requiredLabels?.[0] || "";
-  if (selectedLabel === "the infinitive") {
-    return `å ${selected} → ${correction}`;
-  }
-  if (selectedLabel && requiredLabel) {
-    return `${selected} (${selectedLabel}) → ${correction} (${requiredLabel})`;
-  }
-  return `${selected} → ${correction}`;
-}
-
-function renderMorphologyRepairPrompt(morphologyNearMiss) {
-  const reveal = document.getElementById("game-teaching-reveal");
-  const form = document.querySelector(".game-typed-answer-form");
-  const input = document.getElementById("game-typed-answer-input");
-  const submit = form?.querySelector(".game-typed-submit");
-  if (!reveal || !form || !input || !submit) return false;
-
-  const prompt = morphologyNearMiss.repairPrompt;
-  if (!morphologyNearMiss.isUnambiguous || !prompt) return false;
-
-  reveal.dataset.state = "almost";
-  reveal.classList.remove("has-required-cue");
-  reveal.innerHTML = `
-    <div class="game-teaching-outcome game-teaching-outcome--almost">
-      <span class="game-teaching-outcome-icon" aria-hidden="true">${GAME_OUTCOME_ICON_SVG.almost}</span>
-      <strong>${escapeGameHTML(prompt)}</strong>
-    </div>
-    <p class="game-morphology-repair-note">Edit your answer below, then choose <strong>Try Again</strong>.</p>
-  `;
-
-  form.classList.add("is-almost", "is-repairing");
-  submit.textContent = "Try Again";
-  input.setAttribute("aria-invalid", "true");
-  input.setAttribute("aria-label", prompt);
-  input.focus({ preventScroll: true });
-  const caretPosition = input.value.length;
-  input.setSelectionRange?.(caretPosition, caretPosition);
-
-  const status = document.getElementById("game-answer-status");
-  if (status) status.textContent = prompt;
-  return true;
-}
-
 async function renderGameTeachingReveal({
   wordObj,
   isCorrect,
@@ -7069,7 +6233,6 @@ async function renderGameTeachingReveal({
   isCloze = false,
   wasTyped = false,
   nearMiss = false,
-  morphologyNearMiss = null,
   scheduledForReview = false,
   isSemanticBridge = false,
   isSemanticConnection = false,
@@ -7080,17 +6243,12 @@ async function renderGameTeachingReveal({
   const normalizedAnswer = normalizeGameWhitespace(correctAnswer);
   const normalizedSentence = normalizeGameWhitespace(exampleSentence);
   const normalizedTranslation = normalizeGameWhitespace(sentenceTranslation);
-  const outcomeKind = morphologyNearMiss ? "almost" : isCorrect ? "correct" : "incorrect";
-  const outcomeText = morphologyNearMiss
-    ? morphologyNearMiss.message
-    : isCorrect
-      ? nearMiss
-        ? `Meaning Correct — Check the Spelling: ${normalizedAnswer}`
-        : `Correct — ${normalizedAnswer}`
-      : `Not Quite — ${normalizedAnswer}`;
-  const morphologyContrast = morphologyNearMiss
-    ? getMorphologyFormContrast(morphologyNearMiss)
-    : "";
+  const outcomeKind = isCorrect ? "correct" : "incorrect";
+  const outcomeText = isCorrect
+    ? nearMiss
+      ? `Meaning Correct — Check the Spelling: ${normalizedAnswer}`
+      : `Correct — ${normalizedAnswer}`
+    : `Not Quite — ${normalizedAnswer}`;
   const sentenceHTML = !isCloze && normalizedSentence
     ? await getTeachingSentenceHTML(wordObj, normalizedSentence)
     : "";
@@ -7121,7 +6279,7 @@ async function renderGameTeachingReveal({
       <span class="game-teaching-outcome-icon" aria-hidden="true">${GAME_OUTCOME_ICON_SVG[outcomeKind]}</span>
       <strong>${escapeGameHTML(outcomeText)}</strong>
     </div>
-    <div class="game-teaching-context">${morphologyContrast ? `<p class="game-morphology-contrast">${escapeGameHTML(morphologyContrast)}</p>` : ""}${contextHTML}${translationHTML}</div>
+    <div class="game-teaching-context">${contextHTML}${translationHTML}</div>
     <p class="game-teaching-note${noteWraps ? " game-teaching-note-wrap" : ""}">${escapeGameHTML(note)}</p>
   `;
 
@@ -7160,11 +6318,7 @@ function attachTypedAnswerForm(
     // correct answer (see updateTypedAnswerFeedback) — the report dialog's
     // "My answer should have been accepted" option needs what the learner
     // actually typed, not the correction.
-    if (!form._morphologyRepair) {
-      form.dataset.userAnswer = selectedAnswer;
-    } else {
-      form.dataset.repairAnswer = selectedAnswer;
-    }
+    form.dataset.userAnswer = selectedAnswer;
 
     let acceptedAnswers;
     try {
@@ -7181,9 +6335,7 @@ function attachTypedAnswerForm(
       form._isSubmitting = false;
     }
 
-    // handleTranslationClick synchronously closes the answer window. The
-    // guard above is already cleared so a morphology-repair prompt can
-    // submit its deliberately enabled second attempt.
+    // handleTranslationClick synchronously closes the answer window.
     await handleTranslationClick(
       selectedAnswer,
       wordObj,
@@ -7269,13 +6421,8 @@ async function getTeachingSentenceHTML(wordObj, sentence, clozeTarget = null) {
     return `${escapeGameHTML(clozeTarget.sentence.slice(0, clozeTarget.startIndex))}<mark class="game-introduction-target">${escapeGameHTML(clozeTarget.sentence.slice(clozeTarget.startIndex, clozeTarget.endIndex))}</mark>${escapeGameHTML(clozeTarget.sentence.slice(clozeTarget.endIndex))}`;
   }
 
-  let matcher = null;
-  if (WordClass.getWordClass(wordObj.gender) === "expression") {
-    matcher = (await window.ExpressionPatterns?.getAnalysis(wordObj))?.matcher;
-  } else {
-    const forms = await window.Inflections?.getSentenceForms?.(wordObj);
-    matcher = window.SentenceFormMatching?.createMatcher(forms, results);
-  }
+  const forms = await window.Inflections?.getSentenceForms?.(wordObj);
+  const matcher = window.SentenceFormMatching?.createMatcher(forms, results);
 
   const highlightedSentence = matcher?.highlight
     ? matcher.highlight(sentence)
@@ -7884,7 +7031,7 @@ function revealReverseWordAudio(wordObj) {
   if (correctCardElement instanceof HTMLInputElement) {
     const displayedAnswer = normalizeGameAnswer(correctCardElement.value);
     const entryForms = new Set(
-      getJapaneseEntryVariants(wordObj).map(normalizeGameAnswer),
+      getTypedEntryVariants(wordObj).map(normalizeGameAnswer),
     );
     // A same-gender dictionary synonym can be accepted for typed recall.
     // Do not make that synonym field play the target lemma's different audio.
@@ -7905,7 +7052,6 @@ function updateTypedAnswerFeedback(
   isCorrect,
   correctAnswer,
   isNearMiss = false,
-  morphologyNearMiss = null,
 ) {
   const form = document.querySelector(".game-typed-answer-form");
   const input = document.getElementById("game-typed-answer-input");
@@ -7922,17 +7068,10 @@ function updateTypedAnswerFeedback(
   input.readOnly = true;
   if (submit) submit.disabled = true;
   letterKeys?.forEach((button) => (button.disabled = true));
-  // A successful prompted repair remains a partial first-attempt result for
-  // scheduling, but the corrected value now shown in the field is valid.
-  const displayedFormIsValid = Boolean(
-    isCorrect || morphologyNearMiss?.repairSucceeded,
-  );
-  input.setAttribute("aria-invalid", String(!displayedFormIsValid));
+  input.setAttribute("aria-invalid", String(!isCorrect));
   input.setAttribute(
     "aria-label",
-    morphologyNearMiss
-      ? morphologyNearMiss.message
-      : isCorrect
+    isCorrect
       ? isNearMiss
         ? `Correct, close enough. Correct spelling: ${correctAnswer}`
         : "Correct answer"
@@ -7940,25 +7079,19 @@ function updateTypedAnswerFeedback(
   );
   form.classList.add("is-answered");
   form.classList.toggle("is-correct", isCorrect);
-  form.classList.toggle("is-almost", Boolean(morphologyNearMiss));
-  form.classList.toggle(
-    "is-incorrect",
-    !isCorrect && !morphologyNearMiss,
-  );
+  form.classList.toggle("is-incorrect", !isCorrect);
 
-  // The visible spelling/morphology explanation is rendered in the reserved
+  // The visible spelling explanation is rendered in the reserved
   // teaching shelf after grading. Keeping it out of the prompt-card banner
   // prevents competing messages and preserves the card's fixed geometry.
 }
 
-function announceGameAnswer(isCorrect, correctAnswer, morphologyNearMiss = null) {
+function announceGameAnswer(isCorrect, correctAnswer) {
   const status = document.getElementById("game-answer-status");
   if (!status) return;
-  status.textContent = morphologyNearMiss
-    ? morphologyNearMiss.message
-    : isCorrect
-      ? "Correct"
-      : `Incorrect. Correct answer: ${correctAnswer}`;
+  status.textContent = isCorrect
+    ? "Correct"
+    : `Incorrect. Correct answer: ${correctAnswer}`;
 }
 
 // Listening questions hide the Japanese word's text (only its audio,
@@ -8045,7 +7178,6 @@ async function handleTranslationClick(
   const typedForm = wasTyped
     ? document.querySelector(".game-typed-answer-form")
     : null;
-  const morphologyRepair = typedForm?._morphologyRepair ?? null;
   const cards = document.querySelectorAll(".game-translation-card");
 
   // Reset all cards to their default visual state
@@ -8076,62 +7208,6 @@ async function handleTranslationClick(
     acceptedAnswerIdentities.size > 0
       ? acceptedAnswerIdentities.has(normalizedSelected)
       : selectedTranslationPart === correctTranslationPart;
-  let morphologyNearMiss = morphologyRepair?.feedback ??
-    (!exactAnswerMatch && wasTyped
-      ? await classifyTypedMorphologyNearMiss(wordObj, selectedTranslationPart, {
-          isCloze,
-          isReverse,
-          isListening,
-          clozeTarget,
-          correctAnswer: correctTranslationPart,
-        })
-      : null);
-
-  // A confidently diagnosed form-selection error gets one prompted repair
-  // before anything is graded. This preserves the learner's answer and lets
-  // them produce the correction rather than merely reading it. The original
-  // response time is retained so time spent considering the hint does not
-  // make the initial attempt look artificially slow to the adaptive model.
-  if (
-    morphologyNearMiss?.isUnambiguous &&
-    !morphologyRepair &&
-    renderMorphologyRepairPrompt(morphologyNearMiss)
-  ) {
-    typedForm._morphologyRepair = {
-      feedback: morphologyNearMiss,
-      firstResponseTimeMs: currentQuestionPrediction
-        ? Math.max(0, Date.now() - currentQuestionPrediction.startedAt)
-        : null,
-    };
-    gameActive = true;
-    return;
-  }
-
-  const morphologyRepairSucceeded = Boolean(
-    morphologyRepair && exactAnswerMatch,
-  );
-  if (morphologyRepair) {
-    const correctedAnswer = morphologyRepairSucceeded
-      ? selectedTranslationPart
-      : morphologyNearMiss.correction;
-    morphologyNearMiss = {
-      ...morphologyNearMiss,
-      correction: correctedAnswer,
-      message: morphologyRepairSucceeded
-        ? `That’s it — “${correctedAnswer}”.`
-        : `${isCloze ? "The sentence" : "This exercise"} needs “${morphologyNearMiss.correction}”.`,
-      repairSucceeded: morphologyRepairSucceeded,
-    };
-    if (
-      currentQuestionPrediction &&
-      Number.isFinite(morphologyRepair.firstResponseTimeMs)
-    ) {
-      currentQuestionPrediction.startedAt =
-        Date.now() - morphologyRepair.firstResponseTimeMs;
-    }
-    delete typedForm._morphologyRepair;
-    typedForm.classList.remove("is-repairing");
-  }
   // A typed answer that misses on an exact match gets one more, more
   // forgiving pass — missing æ/ø/å or a small typo shouldn't fail a learner
   // who actually recalled the word. Multiple-choice picks skip this
@@ -8140,7 +7216,6 @@ async function handleTranslationClick(
   // isCloseEnoughTypedAnswer for exactly what counts as "close enough".
   const nearMissTypedMatch =
     !exactAnswerMatch &&
-    !morphologyNearMiss &&
     wasTyped &&
     (acceptedAnswerIdentities.size > 0
       ? [...acceptedAnswerIdentities].some((accepted) =>
@@ -8150,15 +7225,8 @@ async function handleTranslationClick(
           normalizedSelected,
           normalizeGameAnswer(correctTranslationPart),
         ));
-  // A successful repair is celebrated in the interface, but the original
-  // first attempt remains a partial morphology miss. That keeps the existing
-  // delayed exact-form retry and avoids graduating a form that was only
-  // produced after a hint.
-  const answerWasCorrect = morphologyRepair
-    ? false
-    : exactAnswerMatch || nearMissTypedMatch;
-  const learningOutcome = morphologyNearMiss?.outcomeValue ??
-    (answerWasCorrect ? 1 : 0);
+  const answerWasCorrect = exactAnswerMatch || nearMissTypedMatch;
+  const learningOutcome = answerWasCorrect ? 1 : 0;
   const answerSkill = isCloze
     ? "context"
     : isListening
@@ -8227,7 +7295,6 @@ async function handleTranslationClick(
     answerWasCorrect,
     {
       nearMiss: nearMissTypedMatch,
-      morphologyNearMiss: Boolean(morphologyNearMiss),
       wasTyped,
       wasScaffolded: answerWasScaffolded || isSemanticBridge,
     },
@@ -8240,7 +7307,7 @@ async function handleTranslationClick(
       responseTimeMs: predictionEvidence?.responseTimeMs ?? null,
       responseTimeTargetMs:
         window.WordGamePolicy.RESPONSE_TIME_TARGET_MS[answerMode] ?? 6500,
-      nearMiss: nearMissTypedMatch || Boolean(morphologyNearMiss),
+      nearMiss: nearMissTypedMatch,
       possiblyGuessed: predictionEvidence?.possiblyGuessed ?? false,
       wasScaffolded: answerWasScaffolded || isSemanticBridge,
     }),
@@ -8261,7 +7328,7 @@ async function handleTranslationClick(
       isApproaching: answerSkillSnapshot?.isApproaching,
       wasCorrect: answerWasCorrect,
       evidenceWeight: srsEvidenceWeight,
-      nearMiss: nearMissTypedMatch || Boolean(morphologyNearMiss),
+      nearMiss: nearMissTypedMatch,
       possiblyGuessed: predictionEvidence?.possiblyGuessed ?? false,
       wasScaffolded: answerWasScaffolded,
       placementCalibrationEnabled: wordGamePlacementCalibrationEnabled,
@@ -8284,11 +7351,7 @@ async function handleTranslationClick(
       sentenceTranslation,
       a0FirstExposure,
     ));
-  announceGameAnswer(
-    answerWasCorrect,
-    morphologyNearMiss?.correction || correctTranslationPart,
-    morphologyNearMiss,
-  );
+  announceGameAnswer(answerWasCorrect, correctTranslationPart);
 
   if (answerWasCorrect) {
     playSentenceAudio(exampleSentence);
@@ -8398,11 +7461,7 @@ async function handleTranslationClick(
     }
   } else {
     playSentenceAudio(exampleSentence);
-    const answerChime = morphologyNearMiss ? popChime : badChime;
-    const answerChimePriority = morphologyNearMiss
-      ? CHIME_PRIORITY.pop
-      : CHIME_PRIORITY.answer;
-    playChime(answerChime, answerChimePriority);
+    playChime(badChime, CHIME_PRIORITY.answer);
     // Mark the incorrect card as red
     cards.forEach((card) => {
       const cardText = isCloze
@@ -8417,10 +7476,7 @@ async function handleTranslationClick(
         card.classList.add("distractor-muted");
       }
     });
-    // A learner who identified and repaired the right word pauses the streak:
-    // it is not an exact first-attempt success, but it is also meaningfully
-    // different from choosing or recalling the wrong word altogether.
-    if (!morphologyRepair) correctStreak = 0;
+    correctStreak = 0;
     updateRecentAnswers(
       false,
       wordObj,
@@ -8453,12 +7509,7 @@ async function handleTranslationClick(
     if (isCloze) {
       completeClozeSentence(clozeSentence);
     }
-    updateTypedAnswerFeedback(
-      false,
-      morphologyNearMiss?.correction || correctTranslationPart,
-      false,
-      morphologyNearMiss,
-    );
+    updateTypedAnswerFeedback(false, correctTranslationPart, false);
     if (isReverse) {
       revealReverseWordAudio(wordObj);
     }
@@ -8523,13 +7574,12 @@ async function handleTranslationClick(
   await renderGameTeachingReveal({
     wordObj,
     isCorrect: answerWasCorrect,
-    correctAnswer: morphologyNearMiss?.correction || correctTranslationPart,
+    correctAnswer: correctTranslationPart,
     exampleSentence,
     sentenceTranslation,
     isCloze,
     wasTyped,
     nearMiss: nearMissTypedMatch,
-    morphologyNearMiss,
     isSemanticBridge,
     isSemanticConnection: answerMode === "synonym",
     scheduledForReview:
@@ -9889,268 +8939,69 @@ function shuffleArray(array) {
 // hasCompatibleGender lives in wordClass.js (window.WordClass), shared
 // with scripts.js/wordList.js — see that file for its rationale.
 
-function getPhraseChoiceDisplay(value) {
-  return getPrimaryJapaneseForm(value).replace(/[.!?]+$/u, "").trim();
-}
-
-function getPhraseCandidateTemplates(entry) {
-  return [
-    ...new Set(
-      getJapaneseEntryVariants(entry)
-        .map(getPhraseChoiceDisplay)
-        .filter(
-          (choice) =>
-            choice && !getClozePatternTokens(choice).includes("..."),
-        ),
-    ),
-  ];
-}
-
-function getPhraseShape(value) {
-  const tokens = getClozePatternTokens(value);
-  return {
-    tokenCount: tokens.filter((token) => token !== "...").length,
-    wildcardCount: tokens.filter((token) => token === "...").length,
-  };
-}
-
-function generatePhraseClozeDistractors(wordObj, clozeTarget) {
-  if (clozeTarget.requiresInflectionAgreement && !clozeTarget.phraseSlot) {
-    return [];
-  }
-
+// Multiple-choice blanks are filled with other dictionary words of the same
+// word class. Chinese words don't change form, so a distractor is simply that
+// word as written. Words that overlap the answer, already appear in the
+// sentence, or share an English meaning with it are never offered, since
+// either could then be a defensible answer.
+function generateClozeDistractors(wordObj, clozeTarget) {
   const correctAnswer = normalizeGameAnswer(clozeTarget.surfaceForm);
-  const targetTemplate = clozeTarget.template || getPrimaryJapaneseForm(wordObj);
-  const targetShape = getPhraseShape(
-    clozeTarget.surfaceForm || targetTemplate,
-  );
-  const targetWordClass = WordClass.getWordClass(wordObj.gender);
-  const targetCapitalized = startsWithUppercaseLetter(targetTemplate);
-  const seen = new Set([
-    correctAnswer,
-    normalizeGameAnswer(getPhraseChoiceDisplay(targetTemplate)),
-  ]);
+  const correctLength = clozeTarget.surfaceForm.length;
+  const sentence = clozeTarget.sentence;
+  const getClass = (entry) =>
+    WordClass.getWordClass(entry?.gender).split("/")[0];
+  const targetClass = getClass(wordObj);
+  const targetSenses = new Set(getEnglishEntryVariants(wordObj));
+  const seen = new Set([correctAnswer]);
   const distractors = [];
 
-  const candidateChoices = (entry) => {
-    const templates = getPhraseCandidateTemplates(entry);
-    if (!clozeTarget.phraseSlot) return templates;
+  const eligible = getA0SafeJapaneseDistractorPool(results, wordObj).filter(
+    (entry) => {
+      if (entry === wordObj || !entry?.word) return false;
+      if (isExcludedFromRandomSelection(entry.word)) return false;
+      if (
+        BANNED_WORD_CLASSES.some((banned) =>
+          entry.gender?.toLowerCase().startsWith(banned),
+        )
+      ) {
+        return false;
+      }
+      if (getClass(entry) !== targetClass) return false;
+      if (sharesEnglishSenseWith(entry, targetSenses)) return false;
 
-    const descriptor = clozeTarget.phraseSlot;
-    return templates.flatMap((choice) => {
-      const tokens = getClozePatternTokens(choice);
-      const componentIndex =
-        descriptor.position === "first"
-          ? 0
-          : descriptor.position === "last"
-            ? tokens.length - 1
-            : descriptor.componentIndex;
-      if (componentIndex < 0 || componentIndex >= tokens.length) return [];
-
-      const candidateWordClass = WordClass.getWordClass(entry.gender);
-      const nounGender =
-        descriptor.wordClass === "noun" && candidateWordClass === "noun"
-          ? entry.gender
-          : "";
-      const paradigm = window.Inflections?.getParadigmForLemma?.(
-        normalizeGameAnswer(tokens[componentIndex]),
-        descriptor.wordClass,
-        nounGender,
+      const form = normalizeGameAnswer(getPrimaryJapaneseForm(entry));
+      return (
+        form &&
+        !form.includes(correctAnswer) &&
+        !correctAnswer.includes(form) &&
+        !sentence.includes(getPrimaryJapaneseForm(entry))
       );
-      if (!paradigm) return [];
-
-      const compatibleForms = descriptor.slotIndexes.reduce(
-        (accepted, slotIndex) => {
-          const slotForms = paradigm.slots[slotIndex] || [];
-          if (accepted === null) return [...slotForms];
-          const currentSlot = new Set(slotForms);
-          return accepted.filter((form) => currentSlot.has(form));
-        },
-        null,
-      );
-
-      return (compatibleForms || []).map((form) => {
-        const inflectedTokens = [...tokens];
-        inflectedTokens[componentIndex] = restoreDictionaryCase(
-          form,
-          tokens[componentIndex],
-        );
-        return inflectedTokens.join(" ");
-      });
-    });
-  };
-
-  const eligible = getA0SafeJapaneseDistractorPool(results, wordObj).filter((entry) => {
-    const templates = getPhraseCandidateTemplates(entry);
-    const candidateWordClass = WordClass.getWordClass(entry.gender);
-    return (
-      entry !== wordObj &&
-      templates.length > 0 &&
-      candidateWordClass === targetWordClass &&
-      (targetWordClass !== "noun" ||
-        WordClass.hasCompatibleGender(wordObj.gender, entry.gender)) &&
-      (templates.some((choice) => getPhraseShape(choice).tokenCount > 1) ||
-        !["noun", "adjective", "verb"].includes(
-          candidateWordClass,
-        )) &&
-      !isExcludedFromRandomSelection(entry.word)
-    );
-  });
-
-  const hasSimilarShape = (entry) => {
-    const tolerance = Math.max(2, Math.ceil(targetShape.tokenCount * 0.4));
-    return getPhraseCandidateTemplates(entry).some(
-      (choice) => {
-        const shape = getPhraseShape(choice);
-        return (
-          shape.wildcardCount === targetShape.wildcardCount &&
-          Math.abs(shape.tokenCount - targetShape.tokenCount) <= tolerance
-        );
-      },
-    );
-  };
+    },
+  );
 
   const collect = (entries) => {
     for (const entry of shuffleArray([...entries])) {
       if (distractors.length >= 3) return;
-      for (const choice of shuffleArray(candidateChoices(entry))) {
-        const identity = normalizeGameAnswer(choice);
-        if (!identity || seen.has(identity)) continue;
-        seen.add(identity);
-        distractors.push(choice);
-        break;
-      }
+      const form = getPrimaryJapaneseForm(entry);
+      const identity = normalizeGameAnswer(form);
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      distractors.push(form);
     }
   };
 
-  const sameCapitalization = (entry) =>
-    startsWithUppercaseLetter(getPhraseChoiceDisplay(entry)) ===
-    targetCapitalized;
-
+  // Prefer the same level and a similar length, then relax.
+  const similarLength = (entry) =>
+    Math.abs(getPrimaryJapaneseForm(entry).length - correctLength) <= 1;
   collect(
     eligible.filter(
-      (entry) =>
-        entry.CEFR === wordObj.CEFR &&
-        sameCapitalization(entry) &&
-        hasSimilarShape(entry),
+      (entry) => entry.CEFR === wordObj.CEFR && similarLength(entry),
     ),
   );
   if (distractors.length < 3) {
-    collect(
-      eligible.filter(
-        (entry) =>
-          sameCapitalization(entry) &&
-          hasSimilarShape(entry),
-      ),
-    );
+    collect(eligible.filter((entry) => entry.CEFR === wordObj.CEFR));
   }
-  if (distractors.length < 3) {
-    collect(eligible.filter(hasSimilarShape));
-  }
-  if (distractors.length < 3) collect(eligible);
-
-  return distractors;
-}
-
-function generateClozeDistractors(wordObj, clozeTarget) {
-  if (clozeTarget?.kind === "phrase") {
-    return generatePhraseClozeDistractors(wordObj, clozeTarget);
-  }
-
-  const slotIndexes = [...new Set(clozeTarget?.slotIndexes || [])].filter(
-    Number.isInteger,
-  );
-  if (slotIndexes.length === 0) return [];
-  const baseExpression = normalizeGameAnswer(getPrimaryJapaneseForm(wordObj));
-  const targetWordClass = clozeTarget.wordClass;
-  const targetGender = clozeTarget.targetGender || wordObj.gender;
-  const correctAnswer = normalizeGameAnswer(clozeTarget.surfaceForm);
-  const targetCapitalized = startsWithUppercaseLetter(
-    clozeTarget.targetLemma || getPrimaryJapaneseForm(wordObj),
-  );
-  const seen = new Set([correctAnswer]);
-  const distractors = [];
-
-  const candidateForms = (entry) => {
-    const displayExpression = getPrimaryJapaneseForm(entry);
-    const expression = normalizeGameAnswer(displayExpression);
-    if (!expression || expression === baseExpression || entry === wordObj) {
-      return [];
-    }
-    const parts = getClozePatternTokens(expression);
-    if (parts.length !== 1 || parts[0] === "...") return [];
-    if (WordClass.getWordClass(entry.gender) !== targetWordClass) return [];
-
-    const paradigm = window.Inflections?.getParadigmForLemma?.(
-      parts[0],
-      targetWordClass,
-      entry.gender,
-    );
-    if (!paradigm) return [];
-    const compatibleForms = slotIndexes.reduce((accepted, slotIndex) => {
-      const slotForms = paradigm.slots[slotIndex] || [];
-      if (accepted === null) return [...slotForms];
-      const currentSlot = new Set(slotForms);
-      return accepted.filter((form) => currentSlot.has(form));
-    }, null);
-    return (compatibleForms || [])
-      .map((form) => restoreDictionaryCase(form, displayExpression))
-      .filter(
-        (form) =>
-          normalizeGameAnswer(form) !== correctAnswer &&
-          /^[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*$/u.test(form),
-      );
-  };
-
-  const collect = (entries) => {
-    for (const entry of shuffleArray([...entries])) {
-      for (const form of shuffleArray(candidateForms(entry))) {
-        if (distractors.length >= 3) return;
-        const identity = normalizeGameAnswer(form);
-        if (seen.has(identity)) continue;
-        seen.add(identity);
-        distractors.push(form);
-        break; // At most one displayed alternative per dictionary entry.
-      }
-    }
-  };
-
-  const eligible = getA0SafeJapaneseDistractorPool(results, wordObj).filter(
-    (entry) =>
-      entry?.word &&
-      !isExcludedFromRandomSelection(entry.word) &&
-      !BANNED_WORD_CLASSES.some((banned) =>
-        entry.gender?.toLowerCase().startsWith(banned),
-      ) &&
-      WordClass.getWordClass(entry.gender) === targetWordClass &&
-      (targetWordClass !== "noun" ||
-        !targetGender ||
-        WordClass.hasCompatibleGender(targetGender, entry.gender)),
-  );
-
-  collect(
-    eligible.filter(
-      (entry) =>
-        entry.CEFR === wordObj.CEFR &&
-        (targetWordClass !== "noun" ||
-          !targetGender ||
-          WordClass.hasCompatibleGender(targetGender, entry.gender)) &&
-        startsWithUppercaseLetter(getPrimaryJapaneseForm(entry)) ===
-          targetCapitalized,
-    ),
-  );
-  if (distractors.length < 3) {
-    collect(
-      eligible.filter(
-        (entry) =>
-          (targetWordClass !== "noun" ||
-            !targetGender ||
-            WordClass.hasCompatibleGender(targetGender, entry.gender)) &&
-          startsWithUppercaseLetter(getPrimaryJapaneseForm(entry)) ===
-            targetCapitalized,
-      ),
-    );
-  }
+  if (distractors.length < 3) collect(eligible.filter(similarLength));
   if (distractors.length < 3) collect(eligible);
 
   return distractors;

@@ -1,12 +1,10 @@
 function pronAudioBase() {
-  // The local dev server serves the app rooted at the repo itself, so
-  // Resources/ is at "/"; GitHub Pages serves it under the repo name, so
-  // Resources/ is at "/chinese/". Pick the base from where we're running
-  // rather than hardcoding one, since a single string can't be right for both.
-  return window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-    ? ""
-    : "/chinese";
+  // Resources/ sits next to the app's index.html, wherever that is served
+  // from: the site root locally, /chinese/ on GitHub Pages, or a subfolder
+  // of a preview server. Derive the base from the document's own location
+  // (the same root scripts.js's APP_ROOT_URL uses) instead of guessing it
+  // from the hostname.
+  return new URL(".", document.baseURI).href.replace(/\/$/, "");
 }
 
 function buildPronAudioUrl(sentenceText) {
