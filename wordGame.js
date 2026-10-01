@@ -162,13 +162,13 @@ const DAILY_QUESTS = Object.freeze([
   Object.freeze({
     reward: "emerald",
     title: "Emerald Round",
-    description: "Recognize Japanese Meanings",
+    description: "Recognize Chinese Meanings",
     exercise: "recognition",
   }),
   Object.freeze({
     reward: "ruby",
     title: "Ruby Round",
-    description: "Complete Japanese Sentences",
+    description: "Complete Chinese Sentences",
     exercise: "context",
   }),
   Object.freeze({
@@ -873,7 +873,7 @@ const GAME_MODES = Object.freeze({
       structuredMode === "reverse" || ctx.forceTypedReverse,
     freePlayProbability: (ctx) =>
       interpolateByAbility(ctx.ability, REVERSE_FLASHCARD_PROBABILITY) ?? 0.25,
-    instructionText: () => "Choose the Japanese Word",
+    instructionText: () => "Choose the Chinese Word",
     async renderQuestion({
       wordObj,
       forceTypedReverse,
@@ -912,7 +912,7 @@ const GAME_MODES = Object.freeze({
     },
   }),
   "typed-reverse": Object.freeze({
-    instructionText: () => "Type the Japanese Word",
+    instructionText: () => "Type the Chinese Word",
   }),
   "typed-cloze": Object.freeze({
     instructionText: () => "Type the Word That Completes the Sentence",
@@ -6969,13 +6969,13 @@ function getTypedAnswerMarkup(wordId) {
             class="game-typed-answer-input"
             type="text"
             lang="zh-Hant-TW"
-            aria-label="Your answer in Japanese"
+            aria-label="Your answer in Chinese"
             autocomplete="off"
             autocapitalize="sentences"
             autocorrect="off"
             spellcheck="false"
             enterkeyhint="done"
-            placeholder="Type in Japanese"
+            placeholder="Type in Chinese"
           >
           <button class="game-typed-submit" type="submit">Check</button>
         </div>
@@ -7110,7 +7110,7 @@ async function renderGameTeachingReveal({
     : isCloze
       ? "The sentence is now complete."
       : normalizedSentence
-        ? "Tap the Japanese sentence to hear it again."
+        ? "Tap the Chinese sentence to hear it again."
         : "This answer is now part of your review history.";
   const noteWraps = isSemanticBridge || (isSemanticConnection && normalizedSentence);
 
@@ -7253,7 +7253,7 @@ function getIntroductionPracticeNote(mode) {
     return "You’ll hear this word again after a few other words.";
   }
   if (mode === "reverse" || mode === "typed-reverse") {
-    return "You’ll recall this Japanese word after a few other words.";
+    return "You’ll recall this Chinese word after a few other words.";
   }
   return "You’ll recall its meaning after a few other words.";
 }

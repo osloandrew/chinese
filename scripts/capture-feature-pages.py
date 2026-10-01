@@ -25,7 +25,7 @@ from static_metadata import set_canonical_link, set_og_url
 
 ROOT = Path(__file__).resolve().parent.parent
 PRODUCTION_ORIGIN = "https://osloandrew.github.io"
-SITE_PATH = "/japanese/"
+SITE_PATH = "/chinese/"
 PAGE_BASE_HREF = "../"
 
 FEATURES = {
@@ -56,9 +56,9 @@ def capture(output_root: Path) -> None:
         )
         raise SystemExit(1)
 
-    temporary = tempfile.TemporaryDirectory(prefix="japanese-feature-capture-")
+    temporary = tempfile.TemporaryDirectory(prefix="chinese-feature-capture-")
     temporary_root = Path(temporary.name)
-    (temporary_root / "japanese").symlink_to(ROOT)
+    (temporary_root / "chinese").symlink_to(ROOT)
     port = find_free_port()
     handler = lambda *args, **kwargs: QuietHandler(
         *args, directory=str(temporary_root), **kwargs

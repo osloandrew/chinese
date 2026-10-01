@@ -177,10 +177,10 @@ for (const ability of [100, 300, 500, 700, 900]) {
 runSection("function getGameInstructionText", "function getGamePromptLengthClass");
 
 for (const [mode, expected] of [
-  ["typed-reverse", "Type the Japanese Word"],
+  ["typed-reverse", "Type the Chinese Word"],
   ["typed-cloze", "Type the Word That Completes the Sentence"],
   ["synonym", "Pick the Closest Match"],
-  ["reverse", "Choose the Japanese Word"],
+  ["reverse", "Choose the Chinese Word"],
   ["listening", "Listen and Choose the Meaning"],
   ["cloze", "Choose the Missing Word"],
   ["forward", "Choose the English Meaning"],

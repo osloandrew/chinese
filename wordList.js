@@ -2,7 +2,7 @@
   "use strict";
 
   // Japanese alphabetical sorting places æ, ø, and å correctly.
-  const japaneseCollator = new Intl.Collator("ja-JP", {
+  const japaneseCollator = new Intl.Collator("zh-TW", {
     sensitivity: "base",
     numeric: true,
   });
@@ -41,7 +41,7 @@
   /**
    * Convert a value into normalized searchable text.
    */
-  function normalizeWordListText(value, locale = "ja-JP") {
+  function normalizeWordListText(value, locale = "zh-TW") {
     return String(value ?? "")
       .trim()
       .toLocaleLowerCase(locale);
@@ -1139,7 +1139,7 @@
     const japaneseCell = createWordListCell(
       "",
       "word-list-japanese",
-      "Japanese",
+      "Chinese",
       { richContent: true },
     );
 
@@ -1589,7 +1589,7 @@
 
     if (search) {
       const safeSearch = search
-        .toLocaleLowerCase("ja-JP")
+        .toLocaleLowerCase("zh-TW")
         .replace(/[^a-z0-9æøå]+/gi, "-")
         .replace(/^-|-$/g, "")
         .slice(0, 40);
@@ -1641,7 +1641,7 @@
       return;
     }
 
-    const rows = [["Japanese", "English", "Word Class", "Level"]];
+    const rows = [["Chinese", "English", "Word Class", "Level"]];
 
     entries.forEach((entry) => {
       rows.push([
@@ -1678,7 +1678,7 @@
       return;
     }
 
-    const rows = [["Japanese", "English", "Word Class", "Level"]];
+    const rows = [["Chinese", "English", "Word Class", "Level"]];
 
     entries.forEach((entry) => {
       rows.push([
@@ -2034,7 +2034,7 @@
         <table>
           <thead>
             <tr>
-              <th>Japanese</th>
+              <th>Chinese</th>
               <th>English</th>
               <th>Word Class</th>
               <th>Level</th>

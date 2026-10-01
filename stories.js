@@ -114,9 +114,9 @@ const genreIcons = {
   travel: '<i class="fas fa-plane"></i>', // Travel genre icon
 };
 
-const CSV_URL = "japaneseStories.csv";
-const STORY_CACHE_KEY = "storyDataJa";
-const STORY_CACHE_TIME_KEY = "storyDataTimestampJa";
+const CSV_URL = "chineseStories.csv";
+const STORY_CACHE_KEY = "storyDataZh";
+const STORY_CACHE_TIME_KEY = "storyDataTimestampZh";
 // Dedups concurrent callers (the DOMContentLoaded prefetch and an early tap
 // on the Stories tab can both land before either has finished) onto the one
 // in-flight fetch, instead of firing a second full network request. Ported
@@ -190,9 +190,9 @@ function updateStoriesListMetadata() {
   storiesURL.hash = "";
   storiesURL.searchParams.set("type", "stories");
 
-  const pageTitle = "Japanese Stories with English Translations";
+  const pageTitle = "Chinese Stories with English Translations";
   const description =
-    "Read free Japanese stories organized by CEFR level and genre, " +
+    "Read free Chinese stories organized by CEFR level and genre, " +
     "with English translations and audio.";
   const socialImageURL = new URL(
     "Resources/Icons/android-chrome-512x512.png",
@@ -223,7 +223,7 @@ function updateStoryMetadata(story) {
   const pageTitle = `${titleJapanese}: ${levelText}Chinese Story`;
   const description =
     `Read "${titleJapanese}"${translatedTitle}, ` +
-    `a free ${levelText}Japanese ${genreText}story ` +
+    `a free ${levelText}Chinese ${genreText}story ` +
     `with an English translation.`;
 
   const storyURL = new URL(APP_ROOT_URL);
@@ -574,7 +574,7 @@ function createStoryRecommendationElement(story) {
   const isPersonalized = Number.isFinite(window.WordGameHelpers?.getAbilityScore?.());
   const labelHTML = isPersonalized
     ? `<i class="fas fa-star" aria-hidden="true"></i> Recommended for You`
-    : `<i class="fas fa-star" aria-hidden="true"></i> New to Japanese? Start Here`;
+    : `<i class="fas fa-star" aria-hidden="true"></i> New to Chinese? Start Here`;
 
   return createStoryPromoCard(story, labelHTML);
 }

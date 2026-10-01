@@ -170,7 +170,7 @@ def capture(words: list[str], output_root: Path = ROOT) -> None:
             )
             page.wait_for_function(
                 "document.title !== "
-                "'Japanese Dictionary | Search in Japanese or English'",
+                "'Chinese Dictionary | Search in Chinese or English'",
                 timeout=10000,
             )
             print(f"Dictionary loaded ({page.evaluate('results.length')} rows).")

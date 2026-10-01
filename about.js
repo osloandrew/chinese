@@ -19,7 +19,7 @@
     card.className = "my-stats-header";
     card.innerHTML = `
       <h2 class="my-stats-heading">About</h2>
-      <p class="my-stats-subheading">What Japanese Dictionary is, and where to send feedback.</p>
+      <p class="my-stats-subheading">What Chinese Dictionary is, and where to send feedback.</p>
     `;
     return card;
   }
@@ -29,8 +29,8 @@
     card.className = "my-stats-box";
     card.innerHTML = `
       <p class="my-stats-danger-text">
-        Japanese Dictionary is a free, browser-based tool for learning
-        Japanese. It offers word and sentence search with audio, short
+        Chinese Dictionary is a free, browser-based tool for learning
+        Chinese. It offers word and sentence search with audio, short
         stories at every CEFR level, and a Word Game that adapts to your
         level as you practice.
       </p>
@@ -80,17 +80,6 @@
     card.className = "my-stats-box";
     card.innerHTML = `
       <h3 class="my-stats-section-heading">Data sources and acknowledgements</h3>
-      <p class="my-stats-danger-text">
-        Frequency-aware sorting and practice use the
-        <a href="https://clrd.ninjal.ac.jp/bccwj/en/freq-list.html" target="_blank" rel="noopener noreferrer">Balanced Corpus of Contemporary Written Japanese word list</a>,
-        maintained by the National Institute for Japanese Language and Linguistics.
-      </p>
-      <p class="my-stats-danger-text">
-        Word definitions come from the
-        <a href="https://bond-lab.github.io/wnja/" target="_blank" rel="noopener noreferrer">Japanese WordNet</a>
-        (NICT, Francis Bond, and Takayuki Kuribayashi) and
-        <a href="https://ja.wiktionary.org/" target="_blank" rel="noopener noreferrer">Japanese Wiktionary</a>.
-      </p>
       <p class="my-stats-danger-text">
         Stories adapted from third-party work retain their source, author, and licence credit on the individual story.
       </p>

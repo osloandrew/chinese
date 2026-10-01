@@ -80,7 +80,7 @@
           .replace(/[)\]}"'».:!?]+$/u, "")
           .trim()
           .normalize("NFC")
-          .toLocaleLowerCase("ja-JP"),
+          .toLocaleLowerCase("zh-TW"),
       )
       .filter(Boolean);
   }

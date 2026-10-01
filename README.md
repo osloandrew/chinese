@@ -1,6 +1,6 @@
-Japanese Dictionary App
+Chinese Dictionary App
 
-A streamlined, interactive dictionary application designed to facilitate Japanese language learning through word definitions, example sentences, and a vocabulary game.
+A streamlined, interactive dictionary application designed to facilitate Taiwanese Mandarin learning through word definitions, example sentences, and a vocabulary game.
 
 Features
 
@@ -20,7 +20,7 @@ bash
 
 Copy code
 
-git clone https://github.com/osloandrew/japanese.git
+git clone https://github.com/osloandrew/chinese.git
 
 Navigate to the project directory:
 
@@ -28,12 +28,12 @@ bash
 
 Copy code
 
-cd japanese
+cd chinese
 
 Open index.html in a web browser.
 
 Usage
 
-Search: Enter Japanese words to view definitions, part of speech, and example sentences.
+Search: Enter Chinese words to view definitions, part of speech, and example sentences.
 
 Word Game: Select the 'Word Game' mode to begin vocabulary exercises filtered by CEFR and part of speech.

@@ -49,7 +49,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SITE_PATH = "/japanese/"
+SITE_PATH = "/chinese/"
 VIEWPORT = {"width": 1280, "height": 900}
 SCREENSHOT_STYLE = (
     "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}"
@@ -294,7 +294,7 @@ def feature_visual_check(browser: Browser, base_url: str, feature: str, ready_se
         # against the dynamic page's canonical: the live app never sets one
         # for a plain feature-route navigation at all.
         canonical = static.locator('link[rel="canonical"]').get_attribute("href")
-        if canonical != f"https://osloandrew.github.io/japanese/{feature}/":
+        if canonical != f"https://osloandrew.github.io/chinese/{feature}/":
             raise AssertionError(f"{feature}: wrong static canonical {canonical!r}")
     finally:
         dynamic.close()
@@ -415,7 +415,7 @@ def main() -> None:
     words = args.word or ["今日"]
     stories = args.story or ["遊園地での一日"]
 
-    temporary = tempfile.TemporaryDirectory(prefix="japanese-equivalence-")
+    temporary = tempfile.TemporaryDirectory(prefix="chinese-equivalence-")
     temporary_root = Path(temporary.name)
     source_root = args.source_root.resolve()
     site_root = args.site_root.resolve()

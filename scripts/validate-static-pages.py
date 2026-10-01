@@ -5,7 +5,7 @@ Ported from norwegian/scripts/validate-static-pages.py, adapted for real,
 verified differences in this app (see comments at each adapted check):
 
 - CSV columns: chineseWords.csv uses "wordTrad"/"English" (not "ord"/"engelsk"),
-  japaneseStories.csv uses "titleJapanese" (STORY_CSV_NAMES from
+  chineseStories.csv uses "titleJapanese" (STORY_CSV_NAMES from
   story_sources.py already matches).
 - No window.__PRELOADED_STORY__: this app's loadStateFromURL() never reads
   that global (see capture-story-pages.py's docstring), so it is never
@@ -39,7 +39,7 @@ from pathlib import Path
 from story_sources import existing_story_csv_paths
 
 ROOT = Path(__file__).resolve().parent.parent
-SITE = "https://osloandrew.github.io/japanese"
+SITE = "https://osloandrew.github.io/chinese"
 FEATURE_PAGES = {
     "sentences": "Results for",
     "word-game": "Preparing Word Game",

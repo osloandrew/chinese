@@ -32,7 +32,7 @@ from story_sources import STORY_CSV_NAMES, existing_story_csv_paths
 
 ROOT = Path(__file__).resolve().parent.parent
 SNAPSHOT_VERSION = 2
-# STORY_CSV_NAMES (japaneseStories.csv, japaneseAuthenticStories.csv — see
+# STORY_CSV_NAMES (chineseStories.csv, chineseAuthenticStories.csv — see
 # story_sources.py) are both snapshotted and diffed independently, same as
 # every other source file here; the second is optional (see
 # read_csv_dataset_or_empty) so a checkout without it still builds.
@@ -151,7 +151,7 @@ def read_questions(path: Path) -> dict[str, object]:
     if not isinstance(questions, dict) or not all(
         isinstance(key, str) for key in questions
     ):
-        raise BuildError(f"{path.name}: expected an object keyed by Japanese story title")
+        raise BuildError(f"{path.name}: expected an object keyed by Chinese story title")
     return questions
 
 
@@ -296,7 +296,7 @@ def write_snapshot(snapshot_dir: Path) -> None:
         if source.is_file():
             shutil.copyfile(source, temporary)
         else:
-            # Optional story CSV (japaneseAuthenticStories.csv) absent on
+            # Optional story CSV (chineseAuthenticStories.csv) absent on
             # this fork — an empty placeholder snapshot, not a missing file,
             # so snapshot_is_available()'s all-files-present check still
             # passes and later reads see EMPTY_CSV_DATASET / no slugs.

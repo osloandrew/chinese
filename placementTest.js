@@ -9,7 +9,7 @@
   // new learner complete a disposable quiz before receiving useful feedback,
   // audio, example sentences, review retries, and round progress.
   const SELF_ASSESSMENT_OPTIONS = [
-    { label: "I don't know any Japanese yet", anchor: 60, beginnerFocus: 1 },
+    { label: "I don't know any Chinese yet", anchor: 60, beginnerFocus: 1 },
     { label: "I know a handful of words and phrases", anchor: 220, beginnerFocus: 0.72 },
     { label: "I can have simple everyday conversations", anchor: 420, beginnerFocus: 0.48 },
     { label: "I can discuss familiar topics in some detail", anchor: 600, beginnerFocus: 0.18 },
@@ -27,7 +27,7 @@
 
     container.innerHTML = `
       <div class="game-intro-card placement-card">
-        <h2 class="game-intro-heading">How Much Japanese Do You Know?</h2>
+        <h2 class="game-intro-heading">How Much Chinese Do You Know?</h2>
         <p class="game-intro-subheading">Choose a starting point, then begin a 10-word practice round. We’ll fine-tune it from recognition, listening, and recall.</p>
         <div class="placement-option-list">
           ${SELF_ASSESSMENT_OPTIONS.map(

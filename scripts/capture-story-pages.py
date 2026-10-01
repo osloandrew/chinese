@@ -55,7 +55,7 @@ from story_sources import load_all_story_titles
 
 ROOT = Path(__file__).resolve().parent.parent
 PRODUCTION_ORIGIN = "https://osloandrew.github.io"
-SITE_PATH = "/japanese/"
+SITE_PATH = "/chinese/"
 # From story/<slug>/, this reaches the site root under both GitHub Pages and
 # a repository-root local preview.
 PAGE_BASE_HREF = "../../"
@@ -104,9 +104,9 @@ def capture(titles: list[str], output_root: Path = ROOT) -> None:
         )
         sys.exit(1)
 
-    tmp_dir_ctx = tempfile.TemporaryDirectory(prefix="japanese-capture-")
+    tmp_dir_ctx = tempfile.TemporaryDirectory(prefix="chinese-capture-")
     tmp_dir = Path(tmp_dir_ctx.name)
-    (tmp_dir / "japanese").symlink_to(ROOT)
+    (tmp_dir / "chinese").symlink_to(ROOT)
 
     port = find_free_port()
     server = start_server(tmp_dir, port)

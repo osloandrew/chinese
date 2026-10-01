@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 // Minimal RFC4180 CSV parser (quoted fields, embedded commas/newlines/""
 // escapes) -- self-contained rather than reaching for a dependency this
-// project doesn't otherwise declare, since japaneseWords.csv's
+// project doesn't otherwise declare, since chineseWords.csv's
 // sentenceTranslation column does contain quoted, comma-bearing text.
 function parseCSV(content) {
   const rows = [];
@@ -66,7 +66,7 @@ assert.notEqual(functionEnd, -1, "updateURL boundary should exist");
 // make-sitemap.py/capture-word-pages.py/capture-story-pages.py already
 // committed to for which words/stories have a captured pretty page. The
 // outgoing router must only ever produce a pretty URL for something this
-// file actually lists (see japaneseWords.csv/japaneseStories.csv for the
+// file actually lists (see chineseWords.csv/chineseStories.csv for the
 // underlying entries the slugs below come from).
 //
 // This file is gitignored (it's a build artifact of the static-page
@@ -79,8 +79,7 @@ const pageManifestJSON = hasPageManifest
   ? JSON.parse(fs.readFileSync(pageManifestPath, "utf8"))
   : null;
 if (hasPageManifest) {
-  assert.ok(pageManifestJSON.words.includes("cd"), "'cd' should be a captured word page");
-  assert.ok(pageManifestJSON.words.includes("あ"), "'あ' should be a captured word page");
+  assert.ok(Array.isArray(pageManifestJSON.words), "manifest should list captured word pages");
 }
 
 function createRoutingContext(manifestWords = [], manifestStories = []) {
@@ -251,7 +250,7 @@ test("a captured story slug is preferred over the query-string story URL", () =>
 // handful of examples above. This is the actual production data, not
 // invented sample words.
 test("every captured word slug is produced by slugifying its real CSV primary spelling", { skip: !hasPageManifest && "page-manifest.json is a gitignored build artifact, not present on a fresh checkout" }, () => {
-  const wordsCSV = fs.readFileSync(path.join(root, "japaneseWords.csv"), "utf8");
+  const wordsCSV = fs.readFileSync(path.join(root, "chineseWords.csv"), "utf8");
   const rows = parseCSV(wordsCSV, { columns: true, skip_empty_lines: true });
 
   // Matches parseCSVData()'s own filter in scripts.js and
@@ -263,7 +262,7 @@ test("every captured word slug is produced by slugifying its real CSV primary sp
   const primaryWords = new Set();
   for (const row of rows) {
     if (!(row.English || "").trim()) continue;
-    const primary = (row.word || "").split(/[,、]/)[0].trim();
+    const primary = (row.wordTrad || "").split(/[,、]/)[0].trim();
     if (primary) primaryWords.add(primary.toLowerCase());
   }
 
@@ -281,6 +280,6 @@ test("every captured word slug is produced by slugifying its real CSV primary sp
   assert.deepEqual(
     unreachable,
     [],
-    `page-manifest.json lists ${unreachable.length} word slug(s) slugifyWordForURL can't reproduce from japaneseWords.csv`,
+    `page-manifest.json lists ${unreachable.length} word slug(s) slugifyWordForURL can't reproduce from chineseWords.csv`,
   );
 });

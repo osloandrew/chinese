@@ -32,7 +32,7 @@
   function normalizeWord(value) {
     return String(value ?? "")
       .normalize("NFC")
-      .toLocaleLowerCase("ja-JP")
+      .toLocaleLowerCase("zh-TW")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -176,7 +176,7 @@
     const addSentence = (target, entry, sentence, translation = "") => {
       const key = String(sentence ?? "")
         .normalize("NFC")
-        .toLocaleLowerCase("ja-JP")
+        .toLocaleLowerCase("zh-TW")
         .replace(/\s+/g, " ")
         .trim();
       if (!key || uniqueSentences.has(key)) return;

@@ -119,7 +119,7 @@ def _website_node() -> dict[str, object]:
         "@type": "WebSite",
         "@id": f"{SITE}/#website",
         "url": f"{SITE}/",
-        "name": "Japanese Dictionary",
+        "name": "Chinese Dictionary",
         "inLanguage": ["en", "ja"],
     }
 
@@ -146,7 +146,7 @@ def _add_social_metadata(
     source: str, page_title: str, description: str, image: str
 ) -> str:
     values = (
-        ("property", "og:site_name", "Japanese Dictionary"),
+        ("property", "og:site_name", "Chinese Dictionary"),
         ("property", "og:image:alt", page_title),
         ("name", "twitter:title", page_title),
         ("name", "twitter:description", description),
@@ -193,13 +193,13 @@ def enrich_word_html(source: str, *, word: str, canonical: str) -> str:
             "inDefinedTermSet": {
                 "@type": "DefinedTermSet",
                 "@id": f"{SITE}/#dictionary",
-                "name": "Japanese–English Dictionary",
+                "name": "Chinese–English Dictionary",
                 "url": f"{SITE}/",
             },
         },
         _breadcrumb_node(
             canonical,
-            [("Japanese Dictionary", f"{SITE}/"), (word, canonical)],
+            [("Chinese Dictionary", f"{SITE}/"), (word, canonical)],
         ),
     ]
     source = _add_social_metadata(source, page_title, description, image)
@@ -261,8 +261,8 @@ def enrich_story_html(
         _breadcrumb_node(
             canonical,
             [
-                ("Japanese Dictionary", f"{SITE}/"),
-                ("Japanese Stories", f"{SITE}/stories/"),
+                ("Chinese Dictionary", f"{SITE}/"),
+                ("Chinese Stories", f"{SITE}/stories/"),
                 (japanese_title, canonical),
             ],
         ),

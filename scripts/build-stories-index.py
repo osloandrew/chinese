@@ -39,7 +39,7 @@ from static_metadata import set_canonical_link, set_og_url
 
 ROOT = Path(__file__).resolve().parent.parent
 PRODUCTION_ORIGIN = "https://osloandrew.github.io"
-SITE_PATH = "/japanese/"
+SITE_PATH = "/chinese/"
 # From stories/, this reaches the site root under both GitHub Pages and a
 # repository-root local preview.
 PAGE_BASE_HREF = "../"
@@ -62,9 +62,9 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 def build(output_root: Path = ROOT) -> None:
     from playwright.sync_api import sync_playwright
 
-    tmp_dir_ctx = tempfile.TemporaryDirectory(prefix="japanese-capture-")
+    tmp_dir_ctx = tempfile.TemporaryDirectory(prefix="chinese-capture-")
     tmp_dir = Path(tmp_dir_ctx.name)
-    (tmp_dir / "japanese").symlink_to(ROOT)
+    (tmp_dir / "chinese").symlink_to(ROOT)
 
     port = find_free_port()
     handler = lambda *a, **kw: QuietHandler(

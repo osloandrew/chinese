@@ -504,12 +504,12 @@ const FEEDBACK_FORM_URL =
 const FEEDBACK_FORM_FIELD_ID = "entry.279285583";
 
 const FEEDBACK_CATEGORIES = [
-  "Japanese word or spelling",
+  "Chinese word or spelling",
   "English translation",
   "Part of speech / word class",
   "Word inflections",
   "CEFR level seems wrong",
-  "Japanese example sentence",
+  "Chinese example sentence",
   "English sentence translation",
   "Word audio",
   "Sentence audio",
@@ -517,7 +517,7 @@ const FEEDBACK_CATEGORIES = [
 ];
 
 const STORY_FEEDBACK_CATEGORIES = [
-  "Japanese story text",
+  "Chinese story text",
   "English translation",
   "Story audio",
   "Story image",
@@ -1396,7 +1396,7 @@ async function search(queryOverride = null, options = {}) {
     if (matchingResults.length === 1) {
       // Update URL and title for a single result
       const singleResult = matchingResults[0];
-      updateURL(null, type, selectedPOS, null, singleResult.word); // Set word parameter with the result's Japanese term
+      updateURL(null, type, selectedPOS, null, singleResult.word); // Set word parameter with the result's Chinese term
       // Display this single result directly
       displaySearchResults([singleResult]); // Display only this single result
       hideSpinner(); // Hide the spinner
@@ -1657,7 +1657,7 @@ async function showSentencesSearchExample() {
   await search("apple", {
     updateHistory: false,
     sentenceResultSubtitle:
-      "Type any Japanese or English word to find sentences that use it.",
+      "Type any Chinese or English word to find sentences that use it.",
   });
 }
 
@@ -3553,7 +3553,7 @@ function highlightQuery(sentence, query) {
   );
 
   // Define a regex pattern that includes Japanese characters and dynamically inserts the query
-  const japaneseLetters = "[\\wčćđšžČĆĐŠŽ]"; // Include Japanese letters in the pattern
+  const japaneseLetters = "[\\wčćđšžČĆĐŠŽ]"; // Include Chinese letters in the pattern
   const regex = new RegExp(
     `(${japaneseLetters}*${query}${japaneseLetters}*)`,
     "gi"
@@ -3628,7 +3628,7 @@ function renderSentencesHTML(sentenceResults, wordVariations) {
 
         if (matchedVariation) {
           // Use a regular expression to match the full word containing any of the variations
-          const japanesePattern = "[\\wčćđšžČĆĐŠŽ]"; // Pattern including Japanese letters
+          const japanesePattern = "[\\wčćđšžČĆĐŠŽ]"; // Pattern including Chinese letters
           const regex = new RegExp(
             `(${japanesePattern}*${matchedVariation}${japanesePattern}*)`,
             "gi"

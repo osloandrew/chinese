@@ -476,7 +476,7 @@
     production:
       "Producing the word from its meaning — harder, and closer to real conversation.",
     listening:
-      "Understanding the word by ear alone — essential for following spoken Japanese.",
+      "Understanding the word by ear alone — essential for following spoken Chinese.",
     context:
       "Using the word correctly inside a sentence — tests grammar, not just vocabulary.",
     semantic:

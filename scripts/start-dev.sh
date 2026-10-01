@@ -8,16 +8,6 @@ cd "$(dirname "$0")/.." || exit 1
 npm run dev &
 pids=("$!")
 
-# Runs alongside the dev server rather than before it — it downloads a
-# couple hundred MB (Japanese WordNet + Wiktionary) and can take a while,
-# and doesn't need the server up to do its work. Only worth it when
-# chineseWords.csv actually has changes since HEAD to regenerate
-# definitions for, same trigger CI uses.
-if ! git diff --quiet HEAD -- chineseWords.csv 2>/dev/null; then
-  python3 scripts/build-definitions.py &
-  pids+=("$!")
-fi
-
 # Poll instead of a fixed sleep — the server binds almost immediately, but
 # opening the tab before it does just shows a connection-refused page.
 for _ in $(seq 1 30); do

@@ -32,7 +32,7 @@ from zoneinfo import ZoneInfo
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SITE = "https://osloandrew.github.io/japanese"
+SITE = "https://osloandrew.github.io/chinese"
 UPDATE_PREFIX = "[update]"
 TRAILER_PREFIXES = ("co-authored-by:", "signed-off-by:", "reviewed-by:")
 OSLO_TIMEZONE = ZoneInfo("Europe/Oslo")
@@ -242,8 +242,8 @@ def render_page(updates: list[Update], site_root: Path) -> str:
         {
             "@context": "https://schema.org",
             "@type": "CollectionPage",
-            "name": "What's New — Japanese Dictionary",
-            "description": "Recent improvements to the Japanese Dictionary and learning tools.",
+            "name": "What's New — Chinese Dictionary",
+            "description": "Recent improvements to the Chinese Dictionary and learning tools.",
             "url": f"{SITE}/updates/",
             "dateModified": latest,
         },
@@ -255,17 +255,17 @@ def render_page(updates: list[Update], site_root: Path) -> str:
     <base href="../">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>What's New | Japanese Dictionary</title>
-    <meta name="description" content="See the latest improvements to the Japanese Dictionary, stories, vocabulary practice, and learning tools.">
-    <meta property="og:title" content="What's New | Japanese Dictionary">
-    <meta property="og:description" content="Recent improvements to the Japanese Dictionary and learning tools.">
+    <title>What's New | Chinese Dictionary</title>
+    <meta name="description" content="See the latest improvements to the Chinese Dictionary, stories, vocabulary practice, and learning tools.">
+    <meta property="og:title" content="What's New | Chinese Dictionary">
+    <meta property="og:description" content="Recent improvements to the Chinese Dictionary and learning tools.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="{SITE}/updates/">
     <meta property="og:image" content="{SITE}/Resources/Icons/android-chrome-512x512.png">
-    <meta property="og:image:alt" content="What's New | Japanese Dictionary">
+    <meta property="og:image:alt" content="What's New | Chinese Dictionary">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{SITE}/Resources/Icons/android-chrome-512x512.png">
-    <meta name="twitter:image:alt" content="What's New | Japanese Dictionary">
+    <meta name="twitter:image:alt" content="What's New | Chinese Dictionary">
     <link rel="canonical" href="{SITE}/updates/">
     <link rel="icon" type="image/png" sizes="32x32" href="Resources/Icons/favicon-32x32.png">
     <link rel="stylesheet" href="{foundation_css}">
@@ -332,8 +332,8 @@ def render_page(updates: list[Update], site_root: Path) -> str:
           </div>
         </div>
       </div>
-      <a id="site-title" href="./" aria-label="Japanese Dictionary, return to home">
-        <span class="site-wordmark-name">Japanese Dictionary</span>
+      <a id="site-title" href="./" aria-label="Chinese Dictionary, return to home">
+        <span class="site-wordmark-name">Chinese Dictionary</span>
         <span class="site-wordmark-descriptor" aria-hidden="true">Words <span>&middot;</span> Stories <span>&middot;</span> Practice</span>
       </a>
     </header>
@@ -378,7 +378,7 @@ def render_page(updates: list[Update], site_root: Path) -> str:
           </div>
           <p class="updates-eyebrow">Product updates</p>
           <h1 id="updates-title">What's New</h1>
-          <p class="updates-lede">See the latest improvements we're making to help you explore Japanese and practice more effectively.</p>
+          <p class="updates-lede">See the latest improvements we're making to help you explore Chinese and practice more effectively.</p>
           <p class="updates-proof-line">
             <span>{len(updates)} update{"" if len(updates) == 1 else "s"}</span>
             <span aria-hidden="true">·</span>
@@ -416,14 +416,17 @@ def render_page(updates: list[Update], site_root: Path) -> str:
         </a>
         <select id="site-switcher" class="footer-control site-switcher-select" aria-label="Go to another site">
           <option value="">Languages</option>
-          <option value="croatian">Croatian</option><option value="german">German</option>
-          <option value="hebrew">Hebrew</option><option value="italian">Italian</option>
-          <option value="japanese">Japanese</option><option value="latin">Latin</option>
-          <option value="norwegian">Norwegian</option><option value="persian">Persian</option>
-          <option value="spanish">Spanish</option><option value="thai">Thai</option>
+          <option value="chinese">Chinese</option>
+          <option value="croatian">Croatian</option>
+          <option value="german">German</option>
+          <option value="hebrew">Hebrew</option>
+          <option value="italian">Italian</option>
+          <option value="japanese">Japanese</option>
+          <option value="norwegian">Norwegian</option>
+          <option value="persian">Persian</option>
         </select>
       </div>
-      <p class="copyright">© 2026 Japanese Dictionary</p>
+      <p class="copyright">© 2026 Chinese Dictionary</p>
     </footer>
     <!-- Same modules index.html loads for My Words sign-in/streak -- see
          the header comment above for the load-order constraints. Not

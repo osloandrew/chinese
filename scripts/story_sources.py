@@ -1,7 +1,7 @@
 """Shared helpers for reading the app's story-catalog CSV(s) together:
 
-- japaneseStories.csv — the app's primary story catalog.
-- japaneseAuthenticStories.csv — reserved for real, licensed web sources,
+- chineseStories.csv — the app's primary story catalog.
+- chineseAuthenticStories.csv — reserved for real, licensed web sources,
   mirroring norwegian's norwegianAuthenticStories.csv (see that repo's
   import-authentic-story.py and AUTHENTIC_STORIES_DATA.md). This file does
   not exist yet in this repo; every function below treats its absence as
@@ -18,7 +18,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-STORY_CSV_NAMES = ("japaneseStories.csv", "japaneseAuthenticStories.csv")
+STORY_CSV_NAMES = ("chineseStories.csv", "chineseAuthenticStories.csv")
 
 
 def story_csv_paths(root: Path) -> tuple[Path, ...]:

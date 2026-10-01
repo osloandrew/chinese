@@ -3,17 +3,17 @@
     <base href="../">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Chinese Dictionary | Search in Japanese or English</title>
+    <title>Chinese Dictionary | Search in Chinese or English</title>
 
     <!-- Meta Description -->
-    <meta name="description" content="Chinese Dictionary is your resource for finding words in both Japanese and English. Search, filter by part of speech, and discover new words.">
+    <meta name="description" content="Chinese Dictionary is your resource for finding words in both Chinese and English. Search, filter by part of speech, and discover new words.">
 
     <!-- Meta Keywords -->
-    <meta name="keywords" content="Japanese dictionary, Japanese to English, English to Japanese, word search, language learning, part of speech filter, random words">
+    <meta name="keywords" content="Chinese dictionary, Chinese to English, English to Chinese, word search, language learning, part of speech filter, random words">
 
     <!-- Open Graph for Social Media Sharing -->
-    <meta property="og:title" content="Chinese Dictionary | Search in Japanese or English">
-    <meta property="og:description" content="Use the Chinese Dictionary to find translations and definitions for words in Japanese and English.">
+    <meta property="og:title" content="Chinese Dictionary | Search in Chinese or English">
+    <meta property="og:description" content="Use the Chinese Dictionary to find translations and definitions for words in Chinese and English.">
     <meta property="og:image" content="Resources/Icons/android-chrome-512x512.png">
     <meta property="og:url" content="https://osloandrew.github.io/chinese/pronunciation/">
 
@@ -400,8 +400,8 @@
           <div class="search-and-random-wrapper">
             <!-- Search Bar -->
             <div id="search-bar-wrapper" class="search-bar-wrapper">
-              <label for="search-bar" class="sr-only">Search for Japanese or English words</label>
-              <input type="text" id="search-bar" placeholder="Search in Japanese or English" aria-label="Search for Japanese or English words" style="cursor: text;">
+              <label for="search-bar" class="sr-only">Search for Chinese or English words</label>
+              <input type="text" id="search-bar" placeholder="Search in Chinese or English" aria-label="Search for Chinese or English words" style="cursor: text;">
               <button id="clear-btn" class="clear-btn" aria-label="Clear search field" onclick="clearInput()" style="cursor: pointer;">
                 <i class="fas fa-xmark" aria-hidden="true"></i>
               </button>
@@ -416,7 +416,7 @@
       <div id="loading-spinner" class="spinner" style="display: none;"></div>
       <!-- Moved outside the results-container -->
       <div id="landing-card" class="definition" style="display: none;">
-        <h2>Build Your Japanese Vocabulary</h2>
+        <h2>Build Your Chinese Vocabulary</h2>
         <p class="landing-hero-copy">
           Look up words, hear pronunciations, read short stories, and
           practice at your level.
@@ -505,7 +505,7 @@
     <div class="landing-daily-quests-action">
       <div>
         <strong>Next: Emerald Round</strong>
-        <span>Recognize Japanese Meanings · 10 words</span>
+        <span>Recognize Chinese Meanings · 10 words</span>
       </div>
       <button type="button" id="landing-daily-quests-start">Start Emerald Round</button>
     </div>
@@ -526,7 +526,7 @@
             </div>
             <h3 class="landing-card-title">Words</h3>
             <ul class="landing-feature-list">
-              <li>Japanese-English definitions and translations</li>
+              <li>Chinese-English definitions and translations</li>
               <li>Word class, reading, and CEFR difficulty level</li>
               <li>Audio pronunciation and example sentences</li>
             </ul>
@@ -538,7 +538,7 @@
             </div>
             <h3 class="landing-card-title">Sentence Search</h3>
             <ul class="landing-feature-list">
-              <li>Search Japanese sentences by kanji, kana, or English</li>
+              <li>Search Chinese sentences by characters, pinyin, or English</li>
               <li>English translations alongside every sentence</li>
               <li>Audio playback to hear words in context</li>
             </ul>
@@ -548,7 +548,7 @@
             <div class="landing-card-icon-chip">
               <img class="landing-card-image" src="Resources/Photos/stories.svg" alt="">
             </div>
-            <h3 class="landing-card-title">Japanese Stories</h3>
+            <h3 class="landing-card-title">Chinese Stories</h3>
             <ul class="landing-feature-list">
               <li>Graded reading from CEFR A1 to C</li>
               <li>Narrated audio with adjustable playback speed</li>
@@ -574,7 +574,7 @@
             </div>
             <h3 class="landing-card-title">My Words</h3>
             <ul class="landing-feature-list">
-              <li>Build a personal Japanese vocabulary list</li>
+              <li>Build a personal Chinese vocabulary list</li>
               <li>Filter by word class, CEFR level, or strength</li>
               <li>Sync your saved words across devices</li>
             </ul>
@@ -658,15 +658,14 @@
         <!-- Site switcher -->
         <select id="site-switcher" class="footer-control site-switcher-select" aria-label="Go to another site">
           <option value="">Languages</option>
+          <option value="chinese">Chinese</option>
           <option value="croatian">Croatian</option>
           <option value="german">German</option>
           <option value="hebrew">Hebrew</option>
           <option value="italian">Italian</option>
-                    <option value="latin">Latin</option>
+          <option value="japanese">Japanese</option>
           <option value="norwegian">Norwegian</option>
           <option value="persian">Persian</option>
-          <option value="spanish">Spanish</option>
-          <option value="thai">Thai</option>
         </select>
       </div>
       <p class="copyright">© 2026 Chinese Dictionary</p>
