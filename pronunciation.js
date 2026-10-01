@@ -151,11 +151,11 @@ function showRandomPronunciation() {
     "$1"
   );
 
-  const selectedJapanese = cleanedEksempel.trim();
+  const selectedSentence = cleanedEksempel.trim();
   const selectedTranslation = randomEntry.sentenceTranslation || "";
 
   // Build audio URL using the whole sentence
-  const audioFile = buildPronAudioUrl(selectedJapanese);
+  const audioFile = buildPronAudioUrl(selectedSentence);
   console.log("Pronunciation audio src →", audioFile);
 
   // Build sentence HTML
@@ -169,7 +169,7 @@ function showRandomPronunciation() {
     }">
       <div class="sentence-content">
         ${cefrLabel}
-        <p class="sentence">${selectedJapanese}</p>
+        <p class="sentence">${selectedSentence}</p>
       </div>
     </div>
 `;
