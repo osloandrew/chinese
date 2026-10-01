@@ -82,11 +82,11 @@ def build(output_root: Path = ROOT) -> None:
             page.add_init_script(
                 f"""() => {{
                     localStorage.setItem(
-                        'japanese-dictionary-story-shuffle-seed-v1',
+                        'chinese-dictionary-story-shuffle-seed-v1',
                         '{STATIC_STORY_SHUFFLE_SEED}'
                     );
                     sessionStorage.removeItem(
-                        'japanese-dictionary-session-recommendation-v1'
+                        'chinese-dictionary-session-recommendation-v1'
                     );
                     Math.random = () => 0;
                 }}"""

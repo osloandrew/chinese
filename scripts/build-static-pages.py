@@ -145,7 +145,15 @@ def read_csv_dataset_or_empty(path: Path) -> CsvDataset:
 
 def read_questions(path: Path) -> dict[str, object]:
     try:
-        questions = json.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    if not text.strip():
+        # storyQuestions.json is optional until stories exist; an empty
+        # placeholder snapshot means "no questions".
+        return {}
+    try:
+        questions = json.loads(text)
     except json.JSONDecodeError as error:
         raise BuildError(f"{path.name}: invalid JSON: {error}") from error
     if not isinstance(questions, dict) or not all(
@@ -395,6 +403,7 @@ def capture_selected(
 
 
 def full_capture(site_root: Path) -> None:
+    has_stories = bool(existing_story_csv_paths(ROOT))
     run(
         [
             sys.executable,
@@ -404,15 +413,16 @@ def full_capture(site_root: Path) -> None:
             str(site_root),
         ]
     )
-    run(
-        [
-            sys.executable,
-            "scripts/capture-story-pages.py",
-            "--all",
-            "--output-root",
-            str(site_root),
-        ]
-    )
+    if has_stories:
+        run(
+            [
+                sys.executable,
+                "scripts/capture-story-pages.py",
+                "--all",
+                "--output-root",
+                str(site_root),
+            ]
+        )
     run(
         [
             sys.executable,
@@ -422,14 +432,17 @@ def full_capture(site_root: Path) -> None:
         ]
     )
     run([sys.executable, "make-sitemap.py", "--site-root", str(site_root)])
-    run(
-        [
-            sys.executable,
-            "scripts/build-stories-index.py",
-            "--output-root",
-            str(site_root),
-        ]
-    )
+    # Until the first story is added, the Stories page is the checked-in
+    # empty-state shell: there is no story card to capture a list from.
+    if has_stories:
+        run(
+            [
+                sys.executable,
+                "scripts/build-stories-index.py",
+                "--output-root",
+                str(site_root),
+            ]
+        )
 
 
 def incremental_capture(site_root: Path, snapshot_dir: Path) -> IncrementalPlan:

@@ -62,11 +62,11 @@ def use_static_story_index_seed(page: Page) -> None:
     page.add_init_script(
         f"""() => {{
             localStorage.setItem(
-                'japanese-dictionary-story-shuffle-seed-v1',
+                'chinese-dictionary-story-shuffle-seed-v1',
                 '{STATIC_STORY_SHUFFLE_SEED}'
             );
             sessionStorage.removeItem(
-                'japanese-dictionary-session-recommendation-v1'
+                'chinese-dictionary-session-recommendation-v1'
             );
             Math.random = () => 0;
         }}"""
@@ -332,7 +332,9 @@ def heading_semantics_pixel_check(browser: Browser, base_url: str, word: str) ->
         page.close()
 
 
-def behavior_smoke_check(browser: Browser, base_url: str, word: str, story: str) -> None:
+def behavior_smoke_check(
+    browser: Browser, base_url: str, word: str, story: str | None
+) -> None:
     """Interactive-upgrade smoke test for the captured pages. Deliberately
     narrower than norwegian's: the pretty-path routing assertions there (an
     alternative spelling resolving to /word/<slug>/, a sentence search
@@ -348,28 +350,29 @@ def behavior_smoke_check(browser: Browser, base_url: str, word: str, story: str)
         if page.locator(".definition").count() < 1:
             raise AssertionError("Captured word page did not upgrade to the interactive dictionary")
 
-        page.goto(f"{base_url}story/{urllib.parse.quote(slugify(story))}/", wait_until="load")
-        page.wait_for_selector("#story-content .japanese-sentence", state="visible", timeout=30_000)
-        toggle = page.locator("#toggle-english-btn")
-        english_sentence = page.locator("#story-content .english-sentence").first
-        was_visible = english_sentence.is_visible()
-        toggle.click()
-        try:
-            english_sentence.first.wait_for(
-                state="hidden" if was_visible else "visible", timeout=5_000
-            )
-        except PlaywrightTimeoutError:
-            raise AssertionError("Captured story page's English toggle is not interactive")
+        if story:
+            page.goto(f"{base_url}story/{urllib.parse.quote(slugify(story))}/", wait_until="load")
+            page.wait_for_selector("#story-content .japanese-sentence", state="visible", timeout=30_000)
+            toggle = page.locator("#toggle-english-btn")
+            english_sentence = page.locator("#story-content .english-sentence").first
+            was_visible = english_sentence.is_visible()
+            toggle.click()
+            try:
+                english_sentence.first.wait_for(
+                    state="hidden" if was_visible else "visible", timeout=5_000
+                )
+            except PlaywrightTimeoutError:
+                raise AssertionError("Captured story page's English toggle is not interactive")
 
-        page.goto(f"{base_url}stories/", wait_until="load")
-        page.wait_for_selector("#stories .story-card-link", state="visible", timeout=30_000)
-        hidden_before = page.locator(".story-index-hidden").count()
-        show_more = page.locator(".stories-load-more-button")
-        if hidden_before < 1 or show_more.count() != 1:
-            raise AssertionError("Captured stories index is missing its progressive list")
-        show_more.click()
-        if page.locator(".story-index-hidden").count() >= hidden_before:
-            raise AssertionError("Captured stories index's Show More button is not interactive")
+            page.goto(f"{base_url}stories/", wait_until="load")
+            page.wait_for_selector("#stories .story-card-link", state="visible", timeout=30_000)
+            hidden_before = page.locator(".story-index-hidden").count()
+            show_more = page.locator(".stories-load-more-button")
+            if hidden_before < 1 or show_more.count() != 1:
+                raise AssertionError("Captured stories index is missing its progressive list")
+            show_more.click()
+            if page.locator(".story-index-hidden").count() >= hidden_before:
+                raise AssertionError("Captured stories index's Show More button is not interactive")
 
         feature_selectors = {
             "sentences": "#results-container .sentence-container",
@@ -412,8 +415,10 @@ def main() -> None:
         help="Serve the site at /, matching VS Code's repository-root preview.",
     )
     args = parser.parse_args()
-    words = args.word or ["今日"]
-    stories = args.story or ["遊園地での一日"]
+    words = args.word or ["天氣"]
+    # No default story: stories are optional until the first one is added,
+    # and the story/stories-index checks are skipped when none is named.
+    stories = args.story
 
     temporary = tempfile.TemporaryDirectory(prefix="chinese-equivalence-")
     temporary_root = Path(temporary.name)
@@ -421,7 +426,7 @@ def main() -> None:
     site_root = args.site_root.resolve()
     serve_root = temporary_root / "serve"
     serve_root.mkdir()
-    overlay_root = serve_root if args.root_mount else serve_root / "japanese"
+    overlay_root = serve_root if args.root_mount else serve_root / "chinese"
     if not args.root_mount:
         overlay_root.mkdir()
     generated_names = {
@@ -454,12 +459,15 @@ def main() -> None:
                 word_visual_check(browser, base_url, word)
             for story in stories:
                 story_visual_check(browser, base_url, story)
-            stories_index_visual_check(browser, base_url)
+            if stories:
+                stories_index_visual_check(browser, base_url)
             feature_visual_check(browser, base_url, "sentences", "#results-container .sentence-container")
             feature_visual_check(browser, base_url, "word-game", "#results-container .game-intro-card")
             feature_visual_check(browser, base_url, "pronunciation", "#results-container .sentence-box-practice")
             heading_semantics_pixel_check(browser, base_url, words[0])
-            behavior_smoke_check(browser, base_url, words[0], stories[0])
+            behavior_smoke_check(
+                browser, base_url, words[0], stories[0] if stories else None
+            )
             browser.close()
     finally:
         server.shutdown()

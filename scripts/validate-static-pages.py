@@ -95,6 +95,9 @@ def source_values(
 def page_slugs(site_root: Path, folder: str) -> set[str]:
     directory = site_root / folder
     if not directory.is_dir():
+        if folder == "story":
+            # No story data yet, so no story pages were generated.
+            return set()
         raise ValidationError(f"Missing {folder}/ directory")
     items = [item for item in directory.iterdir() if not item.name.startswith(".")]
     unexpected = [item for item in items if not item.is_dir() or not (item / "index.html").is_file()]
@@ -268,13 +271,14 @@ def validate(source_root: Path, site_root: Path) -> tuple[int, int, int]:
             raise ValidationError(f"{page} is missing breadcrumb structured data")
 
     stories_index = site_root / "stories" / "index.html"
-    validate_page(
-        stories_index,
-        f"{SITE}/stories/",
-        shared_assets,
-        next(iter(stories.values())),
-        "../",
-    )
+    if stories:
+        validate_page(
+            stories_index,
+            f"{SITE}/stories/",
+            shared_assets,
+            next(iter(stories.values())),
+            "../",
+        )
     for feature, required_text in FEATURE_PAGES.items():
         validate_page(
             site_root / feature / "index.html",
